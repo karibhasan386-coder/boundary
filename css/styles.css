@@ -334,3 +334,10 @@ nav button { font-size: 13px; }
 .tile.against { background: var(--red-bg); border-color: transparent; } .tile.against b { color: var(--red); }
 .tile.saves { background: var(--green-bg); border-color: transparent; } .tile.saves b { color: var(--green); }
 .tile.close { background: var(--yellow-bg); border-color: transparent; } .tile.close b { color: var(--yellow); }
+
+/* Shown when the app is opened inside Instagram, Facebook and similar */
+#inapp { max-width: 528px; margin: 12px 16px 0; padding: 14px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--yellow-bg); color: var(--yellow); border-radius: var(--btn-radius); font-size: 14px; line-height: 1.45; }
+#inapp span { flex: 1 1 100%; }
+#inapp .btn, #inapp button { min-height: 44px; padding: 8px 14px; font-size: 14px; flex: 1; }
+#inapp .btn { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+@media (min-width: 560px) { #inapp { margin: 12px auto 0; } }

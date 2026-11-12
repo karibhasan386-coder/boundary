@@ -204,7 +204,24 @@ scoreEl.addEventListener('click', (e) => {
 });
 
 // Voice scoring: the phone listens once, we suggest a score, the scorer confirms. Nothing is scored by voice alone.
+// Apps like Instagram and Facebook open links in their own cut-down browser. Voice does not work
+// there and the camera often does not either, so say so and offer the real browser.
+const inApp = (/Instagram|FBAN|FBAV|FB_IAB|Messenger|Line\/|TikTok|musical_ly|Snapchat|Twitter/i.exec(navigator.userAgent) || [])[0];
+const inAppName = !inApp ? '' : /Instagram/i.test(inApp) ? 'Instagram' : /FB|Messenger/i.test(inApp) ? 'Facebook' : 'another app';
+if (inApp) {
+  const android = /Android/i.test(navigator.userAgent);
+  $('#inappText').textContent = `You opened this inside ${inAppName}. Voice scoring and the camera may not work here.${android ? '' : ' Tap the menu at the top, then "Open in external browser".'}`;
+  $('#inappOpen').hidden = !android;
+  $('#inappOpen').href = `intent://${location.host}${location.pathname}#Intent;scheme=https;package=com.android.chrome;end`;
+  $('#inappCopy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(location.href); toast('Link copied. Paste it in Chrome.'); }
+    catch { toast('Could not copy. Type the address into Chrome.'); }
+  });
+  $('#inapp').hidden = false;
+}
+
 function startVoice() {
+  if (inApp) { toast(`Voice does not work inside ${inAppName}. Open the app in Chrome.`); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { toast('Voice scoring needs Chrome and an internet connection'); return; }
   const r = new SR();
