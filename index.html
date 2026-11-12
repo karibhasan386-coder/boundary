@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Boundary</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#FBFBFA">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;600&family=Instrument+Serif&display=swap">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header><h1>Boundary</h1><span class="muted">Offline · data stays on this phone</span></header>
+
+<main>
+  <section id="tab-score" class="tab active"></section>
+
+  <section id="tab-camera" class="tab">
+    <div class="stage" id="stage">
+      <video id="live" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="camMsg" class="cam-msg">Pick a source to start.</div>
+    </div>
+    <div class="row">
+      <button data-src="camera">Phone camera</button>
+      <button data-src="demo">Demo ball</button>
+      <label class="btn">Video file<input type="file" id="fileSrc" accept="video/*" hidden></label>
+    </div>
+    <label class="check"><input type="checkbox" id="trackOn" checked> Live ball tracking (experimental)</label>
+    <div id="trackInfo" class="muted">Tracker idle.</div>
+    <button id="appeal" class="big primary" disabled>Appeal · replay the last balls</button>
+
+    <div id="review" hidden>
+      <h2>Review</h2>
+      <video id="replay" playsinline muted controls></video>
+      <div class="row" id="speeds">
+        <button data-rate="1">1x</button>
+        <button data-rate="0.5">½ speed</button>
+        <button data-rate="0.25" class="on">¼ speed</button>
+        <button id="stepB">Back 1 frame</button>
+        <button id="stepF">Forward 1 frame</button>
+      </div>
+      <label>Decision type
+        <select id="revType">
+          <option value="lbw">LBW</option>
+          <option value="run-out">Run-out</option>
+          <option value="catch">Catch</option>
+          <option value="no-ball">No-ball</option>
+          <option value="boundary">Boundary (4 or 6)</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <div id="lbwForm"></div>
+      <label id="manualWrap" hidden>Decision after watching
+        <select id="manualVerdict">
+          <option>INCONCLUSIVE</option><option>OUT</option><option>NOT OUT</option>
+          <option>FOUR</option><option>SIX</option><option>NO-BALL</option><option>LEGAL BALL</option>
+        </select>
+      </label>
+      <div id="verdict" class="verdict"></div>
+      <div class="row">
+        <button id="saveReview" class="primary">Save decision</button>
+        <a id="dlClip" class="btn">Download clip</a>
+        <button id="closeReview">Back to live</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-ground" class="tab">
+    <h2>Ground Studio</h2>
+    <div class="row"><select id="gSel"></select><button id="gNew">New ground</button></div>
+    <label>Ground name<input id="gName" placeholder="e.g. School field"></label>
+    <canvas id="gCanvas" width="640" height="640"></canvas>
+    <p class="muted">Drag the dots to match your real boundary. Top of the picture is the bowler's far end.</p>
+    <div class="row"><button id="gAdd">Add point</button><button id="gDel">Remove point</button></div>
+    <div class="grid2">
+      <label>Width shown (metres)<input id="gWidth" type="number" min="10" max="200" value="60"></label>
+      <label>Pitch length (yards)<input id="gPitch" type="number" min="8" max="24" value="22"></label>
+    </div>
+    <label>Surface
+      <select id="gSurface"><option value="grass">Grass</option><option value="concrete">Concrete</option><option value="dirt">Dirt</option><option value="mat">Mat / artificial</option></select>
+    </label>
+    <label>Local rules<textarea id="gRules" rows="3" placeholder="e.g. Wall on the full = out. Road side = 2 runs only."></textarea></label>
+    <div id="gStats" class="stats"></div>
+    <button id="gSave" class="primary big">Save ground</button>
+  </section>
+
+  <section id="tab-history" class="tab"></section>
+</main>
+
+<nav>
+  <button data-tab="score" class="on">Score</button>
+  <button data-tab="camera">Camera</button>
+  <button data-tab="ground">Ground</button>
+  <button data-tab="history">History</button>
+</nav>
+<div id="toast" hidden></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+import assert from 'node:assert/strict';
+import * as S from '../js/scoring.js';
+import { decide } from '../js/lbw.js';
+import { findBlobs, detectBounce } from '../js/tracker.js';
+import { measure } from '../js/ground.js';
+
+let n = 0;
+const test = (name, fn) => { fn(); n++; console.log(`ok - ${name}`); };
+const bowl = (m, ...balls) => balls.forEach((b) => S.addBall(m, typeof b === 'number' ? { runs: b } : b));
+
+test('legal balls, overs and runs', () => {
+  const m = S.newMatch({ overs: 2 });
+  bowl(m, 1, 4, 0, 6, 2, 1, 1);
+  const s = S.summarize(m.innings[0], m.cfg);
+  assert.equal(s.runs, 15); assert.equal(s.overs, '1.1'); assert.equal(s.legal, 7);
+  assert.deepEqual(S.thisOver(m.innings[0], m.cfg), ['1']);
+});
+
+test('wide and no-ball add a run and are bowled again', () => {
+  const m = S.newMatch({ overs: 1 });
+  bowl(m, { runs: 0, extra: 'wd' }, { runs: 4, extra: 'nb' }, { runs: 2, extra: 'lb' });
+  const s = S.summarize(m.innings[0], m.cfg);
+  assert.equal(s.runs, 1 + 5 + 2); assert.equal(s.legal, 1); assert.equal(s.extras, 1 + 1 + 2);
+});
+
+test('local rule: wides count as balls when not re-bowled', () => {
+  const m = S.newMatch({ overs: 1, reball: false });
+  bowl(m, { runs: 0, extra: 'wd' });
+  assert.equal(S.summarize(m.innings[0], m.cfg).legal, 1);
+});
+
+test('innings change, chase and result by wickets', () => {
+  const m = S.newMatch({ teamA: 'Lions', teamB: 'Tigers', overs: 1 });
+  bowl(m, 1, 1, 1, 1, 1, 1);
+  assert.equal(m.current, 1); assert.equal(S.target(m), 7);
+  bowl(m, 6, { runs: 0, wicket: 'Bowled' }, 1);
+  assert.equal(m.done, true);
+  assert.equal(S.result(m), 'Tigers won by 9 wickets');
+  assert.throws(() => S.addBall(m, { runs: 1 }));
+});
+
+test('result by runs, tie, and all out', () => {
+  const m = S.newMatch({ teamA: 'Lions', teamB: 'Tigers', overs: 1, wickets: 2 });
+  bowl(m, 4, 4, 0, 0, 0, 0);
+  bowl(m, { runs: 0, wicket: 'Caught' }, { runs: 0, wicket: 'LBW' });
+  assert.equal(S.result(m), 'Lions won by 8 runs');
+  const t = S.newMatch({ overs: 1 });
+  bowl(t, 1, 0, 0, 0, 0, 0); bowl(t, 1, 0, 0, 0, 0, 0);
+  assert.equal(S.result(t), 'Match tied');
+});
+
+test('undo steps back across the innings break and a finished match', () => {
+  const m = S.newMatch({ overs: 1 });
+  bowl(m, 1, 1, 1, 1, 1, 1);
+  S.undo(m);
+  assert.equal(m.current, 0); assert.equal(m.innings.length, 1); assert.equal(m.innings[0].balls.length, 5);
+  bowl(m, 1); bowl(m, 6, 6);
+  assert.equal(m.done, true);
+  S.undo(m);
+  assert.equal(m.done, false); assert.equal(m.innings[1].balls.length, 1);
+});
+
+test('rejects bad input', () => {
+  const m = S.newMatch({});
+  assert.throws(() => S.addBall(m, { runs: 9 }));
+  assert.throws(() => S.addBall(m, { runs: 1, extra: 'zz' }));
+});
+
+const plumb = { noBall: 'no', pitched: 'in_line', batFirst: 'no', impact: 'in_line', shot: 'yes', hitting: 'yes' };
+test('LBW: plumb is OUT', () => assert.equal(decide(plumb).verdict, 'OUT'));
+test('LBW: each not-out condition', () => {
+  for (const change of [{ noBall: 'yes' }, { pitched: 'outside_leg' }, { batFirst: 'yes' }, { impact: 'outside_leg' },
+    { impact: 'outside_off', shot: 'yes' }, { hitting: 'no' }]) {
+    assert.equal(decide({ ...plumb, ...change }).verdict, 'NOT OUT', JSON.stringify(change));
+  }
+});
+test('LBW: outside off with no shot can be OUT; full toss can be OUT', () => {
+  assert.equal(decide({ ...plumb, impact: 'outside_off', shot: 'no' }).verdict, 'OUT');
+  assert.equal(decide({ ...plumb, pitched: 'full_toss' }).verdict, 'OUT');
+});
+test('LBW: unknowns are INCONCLUSIVE, but a known not-out fact still wins', () => {
+  assert.equal(decide({}).verdict, 'INCONCLUSIVE');
+  assert.equal(decide({}).missing.length, 5);
+  assert.equal(decide({ ...plumb, hitting: 'unsure' }).verdict, 'INCONCLUSIVE');
+  assert.equal(decide({ pitched: 'outside_leg' }).verdict, 'NOT OUT');
+});
+
+test('tracker: finds separate blobs with correct centres', () => {
+  const w = 10, h = 6, mask = new Uint8Array(w * h);
+  for (const [x, y] of [[1, 1], [2, 1], [1, 2], [2, 2], [8, 4]]) mask[y * w + x] = 1;
+  const blobs = findBlobs(mask, w, h).sort((a, b) => b.area - a.area);
+  assert.equal(blobs.length, 2);
+  assert.equal(blobs[0].area, 4); assert.equal(blobs[0].x, 1.5); assert.equal(blobs[0].y, 1.5);
+  assert.equal(blobs[1].area, 1); assert.equal(blobs[1].x, 8);
+});
+test('tracker: bounce is where the ball stops going down', () => {
+  const ys = [0.2, 0.3, 0.4, 0.5, 0.45, 0.4];
+  const b = detectBounce(ys.map((y, i) => ({ x: 0.5, y, t: i })));
+  assert.equal(b.y, 0.5);
+  assert.equal(detectBounce(ys.slice(0, 4).map((y) => ({ x: 0.5, y }))), null);
+});
+
+test('ground: square field distances and area', () => {
+  const sq = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+  const s = measure(sq, 100);
+  assert.equal(s.shortest, 50); assert.ok(Math.abs(s.longest - 70.71) < 0.01); assert.equal(s.area, 10000);
+});
+
+console.log(`\n${n} tests passed`);

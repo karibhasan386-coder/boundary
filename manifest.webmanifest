@@ -1,0 +1,13 @@
+{
+  "name": "Boundary",
+  "short_name": "Boundary",
+  "description": "Score, record and review local cricket matches.",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBFBFA",
+  "theme_color": "#FBFBFA",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
