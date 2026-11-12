@@ -285,3 +285,39 @@ select option, select optgroup { background-color: var(--menu, #FFFFFF); color: 
 :root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) nav button.on { background: rgba(255, 255, 255, 0.3); box-shadow: var(--shine); }
 :root[data-theme="night"] nav button.on { background: rgba(255, 255, 255, 0.16); }
 :root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) main { padding-bottom: 128px; }
+
+/* ---------- Settings ---------- */
+#setSearch { width: 100%; }
+.set-group h3 { margin: 28px 0 4px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.set { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.set > span { flex: 1; font-size: 15px; }
+.set > span small { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; margin-top: 2px; }
+.set select, .set input[type="number"] { max-width: 52%; min-height: 44px; padding: 8px 12px; }
+.set input[type="number"] { width: 84px; }
+.set input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.set button, .set .btn { min-height: 44px; padding: 8px 14px; font-size: 14px; flex: none; }
+nav button { font-size: 13px; }
+
+/* Display preferences */
+:root[data-text="large"] main { zoom: 1.14; }
+:root[data-big] .runs button { padding: 30px 0; font-size: 46px; }
+:root[data-calm] *, :root[data-calm] *::before, :root[data-calm] *::after { animation: none !important; transition: none !important; }
+:root[data-calm] #splash { display: none; }
+
+/* Setup helpers and voice suggestion */
+.heard { margin: 12px 0; font: 15px/1.5 var(--sans); }
+#tossBox { margin: 14px 0; font: 15px/1.5 var(--sans); }
+#tossBox p { margin: 8px 0 0; }
+
+/* ---------- Big-screen scoreboard ---------- */
+#board { position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; text-align: center; padding: 4vmin; background: var(--bg); color: var(--text); overflow: hidden; }
+#board::before { content: ""; position: absolute; inset: 0; background: var(--bg-art); pointer-events: none; }
+#boardBody { position: relative; width: 100%; }
+#boardExit { position: absolute; top: 12px; right: 12px; z-index: 1; min-height: 40px; padding: 8px 14px; font-size: 14px; }
+.bd-team { font: 600 4vmin var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
+.bd-score { font: 400 38vmin/0.95 var(--serif); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+.bd-overs { font: 5vmin var(--sans); color: var(--muted); }
+.bd-chase { margin-top: 2vmin; font: 600 5vmin var(--sans); color: var(--accent); }
+.bd-result { margin-top: 2vmin; font: 400 7vmin/1.1 var(--serif); color: var(--accent); }
+.bd-over { justify-content: center; margin-top: 3vmin; gap: 1.2vmin; }
+.bd-over .chip { min-width: 7vmin; height: 7vmin; font-size: 2.8vmin; padding: 0 1.6vmin; }

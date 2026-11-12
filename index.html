@@ -132,13 +132,26 @@ try {
   </section>
 
   <section id="tab-history" class="tab"></section>
+
+  <section id="tab-settings" class="tab">
+    <h2>Settings</h2>
+    <input id="setSearch" type="search" placeholder="Search settings" aria-label="Search settings">
+    <div id="setList"></div>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+  </section>
 </main>
+
+<div id="board" hidden>
+  <button id="boardExit">Close</button>
+  <div id="boardBody"></div>
+</div>
 
 <nav>
   <button data-tab="score" class="on">Score</button>
   <button data-tab="camera">Camera</button>
   <button data-tab="ground">Ground</button>
   <button data-tab="history">History</button>
+  <button data-tab="settings">Settings</button>
 </nav>
 <div id="toast" hidden></div>
 <script type="module" src="js/app.js"></script>

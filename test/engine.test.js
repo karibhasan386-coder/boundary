@@ -3,6 +3,7 @@ import * as S from '../js/scoring.js';
 import { decide } from '../js/lbw.js';
 import { findBlobs, detectBounce, stepTracks, scorePath } from '../js/tracker.js';
 import { measure } from '../js/ground.js';
+import { parseScore, describe } from '../js/voice.js';
 
 let n = 0;
 const test = (name, fn) => { fn(); n++; console.log(`ok - ${name}`); };
@@ -118,6 +119,33 @@ test('tracker: slow or wandering paths are not called a ball', () => {
   assert.equal(scorePath(slow), null);
   assert.equal(scorePath(zigzag), null);
   assert.ok(scorePath(Array.from({ length: 8 }, (_, i) => ({ x: i * 6, y: i }))));
+});
+
+test('voice: English phrases become suggested events', () => {
+  assert.deepEqual(parseScore('Four!'), { runs: 4, extra: null, wicket: null });
+  assert.deepEqual(parseScore('two runs'), { runs: 2, extra: null, wicket: null });
+  assert.deepEqual(parseScore('dot ball'), { runs: 0, extra: null, wicket: null });
+  assert.deepEqual(parseScore('wide'), { runs: 0, extra: 'wd', wicket: null });
+  assert.deepEqual(parseScore('no ball and four'), { runs: 4, extra: 'nb', wicket: null });
+  assert.deepEqual(parseScore('leg bye one'), { runs: 1, extra: 'lb', wicket: null });
+  assert.deepEqual(parseScore('he is out bowled'), { runs: 0, extra: null, wicket: 'Bowled' });
+  assert.deepEqual(parseScore('run out 1'), { runs: 1, extra: null, wicket: 'Run out' });
+  assert.equal(parseScore('nice weather today'), null);
+  assert.equal(parseScore(''), null);
+});
+test('voice: Bangla phrases', () => {
+  assert.deepEqual(parseScore('চার'), { runs: 4, extra: null, wicket: null });
+  assert.deepEqual(parseScore('ছক্কা'), { runs: 6, extra: null, wicket: null });
+  assert.deepEqual(parseScore('দুই রান'), { runs: 2, extra: null, wicket: null });
+  assert.deepEqual(parseScore('ওয়াইড'), { runs: 0, extra: 'wd', wicket: null });
+  assert.deepEqual(parseScore('নো বল'), { runs: 0, extra: 'nb', wicket: null });
+  assert.deepEqual(parseScore('আউট'), { runs: 0, extra: null, wicket: 'Other' });
+});
+test('voice: descriptions for the confirm step', () => {
+  assert.equal(describe({ runs: 4, extra: null, wicket: null }), '4 runs');
+  assert.equal(describe({ runs: 0, extra: null, wicket: null }), 'Dot ball');
+  assert.equal(describe({ runs: 1, extra: 'wd', wicket: null }), 'Wide + 1 run');
+  assert.equal(describe({ runs: 0, extra: null, wicket: 'Bowled' }), 'Wicket (Bowled)');
 });
 
 test('ground: square field distances and area', () => {

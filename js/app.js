@@ -4,6 +4,7 @@ import { load, save } from './store.js';
 import { Camera } from './camera.js';
 import { BallTracker, PITCH_ZONE } from './tracker.js';
 import { GroundEditor, defaultGround, measure } from './ground.js';
+import { parseScore, describe } from './voice.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -15,9 +16,15 @@ const db = {
 const persist = () => {
   const ok = [save('matches', db.matches), save('grounds', db.grounds), save('reviews', db.reviews), save('activeId', db.activeId)];
   if (ok.includes(false)) toast('Could not save: phone storage is full or blocked');
+  if (!$('#board').hidden) renderBoard();
 };
 const active = () => db.matches.find((m) => m.id === db.activeId) || null;
-const ui = { extra: null, wicket: false, endArmed: false };
+const ui = { extra: null, wicket: false, endArmed: false, toss: 0, heard: null, armed: null };
+
+// Personal preferences. They set defaults for the next match; they never change a match in progress.
+const PREF_DEFAULTS = { ball: 'tape', overs: 5, wickets: 10, reball: true, quality: 'balanced', replaySec: 6, trackDefault: false, voiceLang: 'en-IN', textSize: 'normal', bigButtons: false, reduceMotion: false };
+const prefs = { ...PREF_DEFAULTS, ...load('prefs', {}) };
+const QUALITY = { saver: { width: 640, height: 360, fps: 30 }, balanced: { width: 1280, height: 720, fps: 30 }, max: { width: 1920, height: 1080, fps: 60 } };
 
 let toastTimer = 0;
 function toast(text) {
@@ -33,6 +40,7 @@ function show(tab) {
   if (tab === 'score') renderScore();
   if (tab === 'history') renderHistory();
   if (tab === 'ground') editor.draw();
+  if (tab === 'settings') renderSettings();
 }
 $('nav').addEventListener('click', (e) => { if (e.target.dataset.tab) show(e.target.dataset.tab); });
 
@@ -44,6 +52,11 @@ function renderScore() {
   if (!m) {
     scoreEl.innerHTML = `
       <h2>New match</h2>
+      <div class="row">
+        <button type="button" data-tpl="5,tennis">5 overs · tennis</button>
+        <button type="button" data-tpl="10,tape">10 overs · tape</button>
+        <button type="button" data-tpl="20,leather">20 overs · leather</button>
+      </div>
       <form id="setup">
         <label>Batting first<input name="teamA" value="Team A" maxlength="30"></label>
         <label>Their players, one per line (optional)<textarea name="playersA" rows="3" placeholder="Leave empty to score by team only"></textarea></label>
@@ -60,8 +73,11 @@ function renderScore() {
           ${db.grounds.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}
         </select></label>
         <label class="check"><input type="checkbox" name="reball" checked> Wides and no-balls are bowled again</label>
+        <div class="stats" id="tossBox"><button type="button" data-act="toss">Toss the coin</button><div id="tossOut"></div></div>
         <button class="primary big">Start match</button>
       </form>`;
+    const f = $('#setup');
+    f.overs.value = prefs.overs; f.wickets.value = prefs.wickets; f.ballType.value = prefs.ball; f.reball.checked = prefs.reball;
     return;
   }
   const { cfg } = m, i = m.current, inn = m.innings[i], s = S.summarize(inn, cfg);
@@ -101,6 +117,8 @@ function renderScore() {
     ${groundNote}
     ${m.done ? '<button class="primary big" data-act="new">New match</button><button class="big" data-act="share">Share scorecard</button><button class="big" data-act="undo">Undo last ball</button>' : `
       ${players}
+      ${ui.heard ? `<div class="stats heard">Heard "${esc(ui.heard.text)}". Score <b>${esc(describe(ui.heard.ev))}</b>?
+        <div class="row"><button class="primary" data-act="voiceYes">Confirm</button><button data-act="voiceNo">Cancel</button></div></div>` : ''}
       <div class="mods">
         ${[['wd', 'Wide'], ['nb', 'No-ball'], ['b', 'Bye'], ['lb', 'Leg bye']].map(([k, l]) =>
           `<button data-extra="${k}" class="${ui.extra === k ? 'on' : ''}">${l}</button>`).join('')}
@@ -111,6 +129,7 @@ function renderScore() {
       <div class="runs">${[0, 1, 2, 3, 4, 6].map((n) => `<button data-runs="${n}">${n}</button>`).join('')}</div>
       <div class="row">
         <button data-act="undo">Undo</button>
+        <button data-act="voice">Voice</button>
         <button data-act="review" class="danger">Appeal / review</button>
         <button data-act="end">${ui.endArmed ? 'Tap again to end' : 'End match'}</button>
       </div>`}`;
@@ -132,15 +151,12 @@ scoreEl.addEventListener('click', (e) => {
   if (extra) ui.extra = ui.extra === extra ? null : extra;
   else if (act === 'wicket') ui.wicket = !ui.wicket;
   else if (act === 'share') { share(m); return; }
+  else if (act === 'voice') { startVoice(); return; }
+  else if (act === 'voiceNo') ui.heard = null;
+  else if (act === 'voiceYes') { const ev = ui.heard.ev; ui.heard = null; if (!commitBall(m, ev)) return; }
   else if (runs !== undefined) {
-    const inn = m.innings[m.current], i = m.current;
-    if (m.cfg.players?.[i]?.length && !inn.striker) { toast('Pick who is on strike first'); return; }
-    if (m.cfg.players?.[1 - i]?.length && !inn.bowler) { toast('Pick the bowler first'); return; }
     const wicket = ui.wicket ? ($('#wkType')?.value || 'Other') : null;
-    S.addBall(m, { runs: +runs, extra: ui.extra, wicket });
-    ui.extra = null; ui.wicket = false; persist();
-    if (m.done) toast(S.result(m));
-    else if (m.current === 1 && !m.innings[1].balls.length) toast(`Innings over. ${m.cfg.teams[1]} need ${S.target(m)}`);
+    if (!commitBall(m, { runs: +runs, extra: ui.extra, wicket })) return;
   } else if (act === 'undo') { S.undo(m); persist(); }
   else if (act === 'new') { db.activeId = null; persist(); }
   else if (act === 'end') {
@@ -149,6 +165,60 @@ scoreEl.addEventListener('click', (e) => {
   else return;
   renderScore();
 });
+
+// The one place a ball is added, whether it was tapped or spoken.
+function commitBall(m, ev) {
+  const inn = m.innings[m.current], i = m.current;
+  if (m.cfg.players?.[i]?.length && !inn.striker) { toast('Pick who is on strike first'); return false; }
+  if (m.cfg.players?.[1 - i]?.length && !inn.bowler) { toast('Pick the bowler first'); return false; }
+  S.addBall(m, ev);
+  ui.extra = null; ui.wicket = false; persist();
+  if (m.done) toast(S.result(m));
+  else if (m.current === 1 && !m.innings[1].balls.length) toast(`Innings over. ${m.cfg.teams[1]} need ${S.target(m)}`);
+  return true;
+}
+
+// Match setup helpers: templates and the toss.
+scoreEl.addEventListener('click', (e) => {
+  const b = e.target.closest('button'), f = $('#setup');
+  if (!b || !f) return;
+  if (b.dataset.tpl) {
+    const [overs, ball] = b.dataset.tpl.split(',');
+    f.overs.value = overs; f.ballType.value = ball;
+    toast(`Set to ${overs} overs, ${ball} ball`);
+  } else if (b.dataset.act === 'toss') {
+    const names = [f.teamA.value || 'Team A', f.teamB.value || 'Team B'];
+    ui.toss = crypto.getRandomValues(new Uint8Array(1))[0] & 1;
+    $('#tossOut').innerHTML = `<p><b>${esc(names[ui.toss])}</b> won the toss. What do they choose?</p>
+      <div class="row"><button type="button" data-choice="bat">Bat first</button><button type="button" data-choice="bowl">Bowl first</button></div>`;
+  } else if (b.dataset.choice) {
+    const winner = [f.teamA.value || 'Team A', f.teamB.value || 'Team B'][ui.toss];
+    const batsFirst = b.dataset.choice === 'bat' ? ui.toss : 1 - ui.toss;
+    if (batsFirst === 1) { // put the side batting first in the first box
+      [f.teamA.value, f.teamB.value] = [f.teamB.value, f.teamA.value];
+      [f.playersA.value, f.playersB.value] = [f.playersB.value, f.playersA.value];
+    }
+    $('#tossOut').innerHTML = `<p><b>${esc(winner)}</b> won the toss and chose to ${b.dataset.choice} first. ${esc(f.teamA.value || 'Team A')} will bat first.</p>`;
+  }
+});
+
+// Voice scoring: the phone listens once, we suggest a score, the scorer confirms. Nothing is scored by voice alone.
+function startVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('Voice scoring needs Chrome and an internet connection'); return; }
+  const r = new SR();
+  r.lang = prefs.voiceLang; r.maxAlternatives = 3;
+  r.onresult = (e) => {
+    const heard = [...e.results[0]].map((a) => a.transcript);
+    for (const text of heard) {
+      const ev = parseScore(text);
+      if (ev) { ui.heard = { text, ev }; renderScore(); return; }
+    }
+    toast(`Heard "${heard[0]}" but could not turn it into a score`);
+  };
+  r.onerror = (e) => toast(e.error === 'not-allowed' ? 'Microphone permission was denied' : 'Could not hear anything. Try again.');
+  try { r.start(); toast('Listening. Say the score, for example "four" or "wide".'); } catch { toast('Voice is already listening'); }
+}
 
 scoreEl.addEventListener('change', (e) => {
   const pos = e.target.dataset.pos, m = active();
@@ -178,10 +248,11 @@ async function startSource(kind, file) {
   closeReview();
   camMsg('Starting…');
   try {
-    await cam.start(kind, file);
+    cam.segMs = prefs.replaySec * 1000;
+    await cam.start(kind, file, QUALITY[prefs.quality]);
     if (live.videoWidth) stage.style.aspectRatio = `${live.videoWidth} / ${live.videoHeight}`;
     camMsg('');
-    $('#trackOn').checked = kind === 'demo'; // real footage: off until the user asks for it
+    $('#trackOn').checked = kind === 'demo' || prefs.trackDefault; // real footage: off unless Settings says otherwise
     tracker.reset();
     $('#appeal').disabled = !cam.canReplay;
     if (!cam.canReplay) toast('Replay is not supported in this browser');
@@ -430,6 +501,133 @@ historyEl.addEventListener('click', (e) => {
   if (shareId) { const m = db.matches.find((x) => x.id === +shareId); if (m) share(m); }
 });
 
+// ---------- settings ----------
+const SETTINGS = [
+  ['Match defaults', [
+    { k: 'ball', label: 'Default ball', opts: [['tape', 'Tape ball'], ['tennis', 'Tennis ball'], ['leather', 'Leather ball']] },
+    { k: 'overs', label: 'Default overs', num: [1, 50] },
+    { k: 'wickets', label: 'Default wickets', num: [1, 10] },
+    { k: 'reball', label: 'Wides and no-balls are bowled again', bool: true },
+  ]],
+  ['Camera and replay', [
+    { k: 'quality', label: 'Video quality', note: 'The phone uses the nearest size it supports.', opts: [['saver', 'Data saver (360p)'], ['balanced', 'Balanced (720p)'], ['max', 'Maximum (1080p, 60 fps)']] },
+    { k: 'replaySec', label: 'Replay length', note: 'Longer replays use more memory.', opts: [[4, '4 to 8 seconds'], [6, '6 to 12 seconds'], [10, '10 to 20 seconds']] },
+    { k: 'trackDefault', label: 'Start ball tracking with the camera', note: 'Experimental. Not reliable on real matches yet.', bool: true },
+  ]],
+  ['Voice scoring', [
+    { k: 'voiceLang', label: 'Language you speak', note: 'You always confirm before the score changes.', opts: [['en-IN', 'English'], ['bn-BD', 'Bangla']] },
+  ]],
+  ['Display', [
+    { k: 'textSize', label: 'Text size', opts: [['normal', 'Normal'], ['large', 'Large']] },
+    { k: 'bigButtons', label: 'Large scoring buttons', bool: true },
+    { k: 'reduceMotion', label: 'Reduce motion', note: 'Turns off the loading animation and moving backgrounds.', bool: true },
+  ]],
+  ['Scoreboard display', [
+    { label: 'Big-screen scoreboard', note: 'Shows the live score full screen. For a second screen, open the app in another window on this device and add #scoreboard to the address.', action: ['board', 'Open'] },
+  ]],
+  ['Data on this phone', [
+    { label: 'Storage used', info: () => `${(Object.keys(localStorage).filter((k) => k.startsWith('boundary.')).reduce((n, k) => n + localStorage.getItem(k).length, 0) / 1024).toFixed(1)} KB · ${db.matches.length} matches · ${db.grounds.length} grounds · ${db.reviews.length} reviews` },
+    { label: 'Back up everything', note: 'Saves matches, grounds, reviews and settings to a file.', action: ['export', 'Download'] },
+    { label: 'Restore from a backup', note: 'Replaces everything on this phone with the backup.', action: ['import', 'Choose file'] },
+    { label: 'Delete all data', note: 'Removes every match, ground and review from this phone. This cannot be undone.', action: ['wipe', 'Delete'], danger: true },
+  ]],
+  ['About', [
+    { label: 'Version', info: () => '0.4 (test build)' },
+    { label: 'What the AI can and cannot do', info: () => 'Decisions come from the replay and your answers. Ball tracking is experimental and is not an umpire.' },
+    { label: 'Privacy', info: () => 'No account. Scores and video stay on this phone unless you download or share them.' },
+  ]],
+];
+
+function applyPrefs() {
+  const r = document.documentElement;
+  r.dataset.text = prefs.textSize;
+  r.toggleAttribute('data-big', !!prefs.bigButtons);
+  r.toggleAttribute('data-calm', !!prefs.reduceMotion);
+}
+
+function renderSettings() {
+  const q = $('#setSearch').value.trim().toLowerCase();
+  const row = (d) => {
+    let control = '';
+    if (d.opts) control = `<select data-pref="${d.k}">${d.opts.map(([v, l]) => `<option value="${v}"${String(prefs[d.k]) === String(v) ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+    else if (d.num) control = `<input type="number" data-pref="${d.k}" min="${d.num[0]}" max="${d.num[1]}" value="${prefs[d.k]}">`;
+    else if (d.bool) control = `<input type="checkbox" data-pref="${d.k}"${prefs[d.k] ? ' checked' : ''} aria-label="${esc(d.label)}">`;
+    else if (d.action) control = `<button data-do="${d.action[0]}"${d.danger ? ' class="danger"' : ''}>${ui.armed === d.action[0] ? 'Tap again' : d.action[1]}</button>`;
+    const note = d.info ? d.info() : d.note;
+    return `<div class="set"><span>${esc(d.label)}${note ? `<small>${esc(note)}</small>` : ''}</span>${control}</div>`;
+  };
+  const html = SETTINGS.map(([group, rows]) => {
+    const shown = rows.filter((d) => !q || `${group} ${d.label} ${d.note || ''}`.toLowerCase().includes(q));
+    return shown.length ? `<div class="set-group"><h3>${group}</h3>${shown.map(row).join('')}</div>` : '';
+  }).join('');
+  $('#setList').innerHTML = html || '<p class="muted">No setting matches that search.</p>';
+}
+
+$('#setSearch').addEventListener('input', renderSettings);
+$('#setList').addEventListener('change', (e) => {
+  const k = e.target.dataset.pref; if (!k) return;
+  const def = SETTINGS.flatMap(([, rows]) => rows).find((d) => d.k === k);
+  let v = def.bool ? e.target.checked : e.target.value;
+  if (def.num) v = Math.min(def.num[1], Math.max(def.num[0], Math.round(+v) || def.num[0]));
+  else if (def.opts && typeof def.opts[0][0] === 'number') v = +v;
+  prefs[k] = v; save('prefs', prefs); applyPrefs(); toast('Saved');
+  if (def.num) e.target.value = v;
+});
+$('#setList').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-do]')?.dataset.do; if (!act) return;
+  if (act === 'board') { openBoard(); return; }
+  if (act === 'export') {
+    const data = { app: 'boundary', version: 1, exported: new Date().toISOString(), matches: db.matches, grounds: db.grounds, reviews: db.reviews, activeId: db.activeId, prefs, theme: look.theme };
+    download(`boundary-backup-${new Date().toISOString().slice(0, 10)}.json`, new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    return;
+  }
+  // Destructive actions need a second tap.
+  if (ui.armed !== act) { ui.armed = act; renderSettings(); setTimeout(() => { if (ui.armed === act) { ui.armed = null; renderSettings(); } }, 4000); return; }
+  ui.armed = null;
+  if (act === 'import') { $('#importFile').click(); renderSettings(); return; }
+  if (act === 'wipe') {
+    Object.assign(db, { matches: [], grounds: [], reviews: [], activeId: null });
+    persist(); fillGroundSelect(); renderSettings(); toast('All data deleted');
+  }
+});
+$('#importFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  try {
+    const d = JSON.parse(await file.text());
+    if (d.app !== 'boundary' || !Array.isArray(d.matches) || !Array.isArray(d.grounds) || !Array.isArray(d.reviews)) throw new Error('not a backup');
+    Object.assign(db, { matches: d.matches, grounds: d.grounds, reviews: d.reviews, activeId: d.activeId ?? null });
+    Object.assign(prefs, PREF_DEFAULTS, d.prefs || {}); save('prefs', prefs); applyPrefs();
+    persist(); fillGroundSelect(); renderSettings(); toast(`Restored ${d.matches.length} matches`);
+  } catch { toast('That file is not a Boundary backup'); }
+});
+
+// ---------- big-screen scoreboard ----------
+// Reads straight from storage so a second window on the same device stays live.
+function renderBoard() {
+  const matches = load('matches', []), id = load('activeId', null);
+  const m = matches.find((x) => x.id === id) || matches[matches.length - 1];
+  if (!m) { $('#boardBody').innerHTML = '<div class="bd-overs">Waiting for a match to start</div>'; return; }
+  const i = m.current, s = S.summarize(m.innings[i], m.cfg), tgt = S.target(m);
+  const left = m.cfg.overs * 6 - s.legal;
+  const chips = S.thisOver(m.innings[i], m.cfg).map((l) => `<span class="chip ${l.startsWith('W') ? 'w' : l === '4' ? 'b4' : l === '6' ? 'b6' : ''}">${esc(l)}</span>`).join('');
+  $('#boardBody').innerHTML = `
+    <div class="bd-team">${esc(m.cfg.teams[i])}</div>
+    <div class="bd-score">${s.runs}/${s.wickets}</div>
+    <div class="bd-overs">${s.overs} of ${m.cfg.overs} overs</div>
+    ${m.done ? `<div class="bd-result">${esc(S.result(m))}</div>` : tgt ? `<div class="bd-chase">Need ${tgt - s.runs} from ${left} ball${left === 1 ? '' : 's'}</div>` : ''}
+    <div class="over bd-over">${chips}</div>`;
+}
+function openBoard() {
+  $('#board').hidden = false; renderBoard();
+  document.documentElement.requestFullscreen?.().catch(() => {});
+}
+$('#boardExit').addEventListener('click', () => {
+  $('#board').hidden = true;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+});
+window.addEventListener('storage', () => { if (!$('#board').hidden) renderBoard(); });
+
 // ---------- themes ----------
 // Premium themes are only marked, not sold: there is no payment system yet, so the
 // "preview" switch stands in for a real subscription check.
@@ -482,6 +680,8 @@ splash.addEventListener('click', () => splash.classList.add('skip'));
 setTimeout(dropSplash, 3200);
 
 loadGround(defaultGround());
+applyPrefs();
 applyTheme();
+if (location.hash === '#scoreboard') openBoard();
 renderScore();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

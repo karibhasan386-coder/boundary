@@ -45,14 +45,15 @@ export class Camera {
 
   get canReplay() { return !!this.rec; }
 
-  async start(kind, file) {
+  // want: { width, height, fps } asked from the phone camera. The phone gives the nearest it supports.
+  async start(kind, file, want = { width: 1280, height: 720, fps: 60 }) {
     this.stop();
     const v = this.video;
     if (kind === 'camera') {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser cannot open the camera. Open the app over https or on localhost.');
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } },
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: want.width }, height: { ideal: want.height }, frameRate: { ideal: want.fps } },
       });
       v.srcObject = this.stream;
     } else if (kind === 'demo') {
