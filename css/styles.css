@@ -321,3 +321,16 @@ nav button { font-size: 13px; }
 .bd-result { margin-top: 2vmin; font: 400 7vmin/1.1 var(--serif); color: var(--accent); }
 .bd-over { justify-content: center; margin-top: 3vmin; gap: 1.2vmin; }
 .bd-over .chip { min-width: 7vmin; height: 7vmin; font-size: 2.8vmin; padding: 0 1.6vmin; }
+
+/* ---------- DRS view ---------- */
+.replay-wrap { position: relative; line-height: 0; }
+#drsCanvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; border-radius: var(--radius); }
+#drsStep { margin: 12px 0; font: 15px/1.5 var(--sans); }
+#drsStep b { display: block; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 4px; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+.tile { padding: 12px 6px; border-radius: var(--btn-radius); text-align: center; border: 1px solid var(--line); background: var(--card); }
+.tile small { display: block; font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.tile b { display: block; margin-top: 4px; font: 400 20px/1.15 var(--serif); }
+.tile.against { background: var(--red-bg); border-color: transparent; } .tile.against b { color: var(--red); }
+.tile.saves { background: var(--green-bg); border-color: transparent; } .tile.saves b { color: var(--green); }
+.tile.close { background: var(--yellow-bg); border-color: transparent; } .tile.close b { color: var(--yellow); }

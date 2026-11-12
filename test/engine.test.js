@@ -4,6 +4,7 @@ import { decide } from '../js/lbw.js';
 import { findBlobs, detectBounce, stepTracks, scorePath } from '../js/tracker.js';
 import { measure } from '../js/ground.js';
 import { parseScore, describe } from '../js/voice.js';
+import { solve, side } from '../js/drs.js';
 
 let n = 0;
 const test = (name, fn) => { fn(); n++; console.log(`ok - ${name}`); };
@@ -146,6 +147,45 @@ test('voice: descriptions for the confirm step', () => {
   assert.equal(describe({ runs: 0, extra: null, wicket: null }), 'Dot ball');
   assert.equal(describe({ runs: 1, extra: 'wd', wicket: null }), 'Wide + 1 run');
   assert.equal(describe({ runs: 0, extra: null, wicket: 'Bowled' }), 'Wicket (Bowled)');
+});
+
+// A pretend camera: 1.5 m high, 3 m behind the bowler's stumps, looking straight down the pitch.
+const ASPECT = 16 / 9, HALF = 0.1143, STUMP = 0.711, ZO = 3, ZB = 3 + 20.12;
+const shoot = (X, Y, Z) => ({ x: (0.5 * ASPECT + (1.2 * X) / Z) / ASPECT, y: 0.5 + (1.2 * (1.5 - Y)) / Z });
+const stumpMarks = { bl: shoot(-HALF, 0, ZB), br: shoot(HALF, 0, ZB), bt: shoot(0, STUMP, ZB), ol: shoot(-HALF, 0, ZO), or: shoot(HALF, 0, ZO) };
+const ballMarks = (pitch, hit) => ({ ...stumpMarks, pitch: shoot(...pitch), impact: shoot(...hit) });
+const STRIDE = 1.22 / 20.12, ZI = ZB - 1.22;
+
+test('DRS: recovers the ball position and projects it on to the stumps', () => {
+  const r = solve(ballMarks([0.05, 0, 17], [0.03, 0.3, ZI]), { aspect: ASPECT, stride: STRIDE });
+  assert.equal(r.error, undefined);
+  assert.ok(Math.abs(r.P.X - 0.05 / HALF) < 1e-6);
+  assert.ok(Math.abs(r.I.X - 0.03 / HALF) < 1e-6);
+  assert.ok(Math.abs(r.I.H - 0.3 / HALF) < 1e-6);
+  assert.ok(Math.abs(r.stumpH - STUMP / HALF) < 1e-6);
+  const t = 1.22 / (ZI - 17);
+  assert.ok(Math.abs(r.W.X - (0.03 + (0.03 - 0.05) * t) / HALF) < 1e-6);
+  assert.ok(Math.abs(r.W.H - (0.3 + 0.3 * t) / HALF) < 1e-6);
+  assert.deepEqual([r.pitching, r.impact, r.wickets], ['in_line', 'in_line', 'hitting']);
+});
+test('DRS: missing, going over, clipping and pitched outside', () => {
+  const o = { aspect: ASPECT, stride: STRIDE };
+  assert.equal(solve(ballMarks([-0.3, 0, 17], [0.1, 0.3, ZI]), o).wickets, 'missing');      // sliding past the right stump
+  assert.equal(solve(ballMarks([0, 0, 19], [0, 0.65, ZI]), o).wickets, 'missing');          // bouncing over the top
+  assert.equal(solve(ballMarks([0.13, 0, 15], [0.13, 0.3, ZI]), o).wickets, 'clipping');    // just outside the stump, ball edge touches
+  const wide = solve(ballMarks([0.4, 0, 16], [0.2, 0.3, ZI]), o);
+  assert.deepEqual([wide.pitching, wide.impact], ['right', 'right']);
+});
+test('DRS: full toss, bad marks, and off or leg side', () => {
+  const ft = solve({ ...stumpMarks, impact: shoot(0, 0.4, ZI) }, { aspect: ASPECT, stride: STRIDE, fullToss: true });
+  assert.deepEqual([ft.pitching, ft.impact, ft.wickets], ['full_toss', 'in_line', 'unknown']);
+  assert.ok(solve({ ...stumpMarks }, { aspect: ASPECT }).error);
+  assert.ok(solve(ballMarks([0, 0, 22.5], [0, 0.3, ZI]), { aspect: ASPECT, stride: STRIDE }).error); // "pitched" behind the batter
+  assert.equal(side('right', 'right', 'behind-bowler'), 'outside_leg');
+  assert.equal(side('left', 'right', 'behind-bowler'), 'outside_off');
+  assert.equal(side('right', 'left', 'behind-bowler'), 'outside_off');
+  assert.equal(side('right', 'right', 'behind-batter'), 'outside_off');
+  assert.equal(side('in_line', 'left'), 'in_line');
 });
 
 test('ground: square field distances and area', () => {

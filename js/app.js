@@ -5,6 +5,7 @@ import { Camera } from './camera.js';
 import { BallTracker, PITCH_ZONE } from './tracker.js';
 import { GroundEditor, defaultGround, measure } from './ground.js';
 import { parseScore, describe } from './voice.js';
+import { solve, side } from './drs.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -216,7 +217,21 @@ function startVoice() {
     }
     toast(`Heard "${heard[0]}" but could not turn it into a score`);
   };
-  r.onerror = (e) => toast(e.error === 'not-allowed' ? 'Microphone permission was denied' : 'Could not hear anything. Try again.');
+  // Say exactly what went wrong, so a failure on the phone can be fixed instead of guessed at.
+  const WHY = {
+    'not-allowed': 'Microphone is blocked. Allow it in the browser site settings, then try again.',
+    'service-not-allowed': 'This browser does not allow voice typing here. Open the app in Chrome.',
+    'no-speech': 'Heard nothing. Tap Voice and speak straight away.',
+    'audio-capture': 'No microphone found, or another app is using it.',
+    network: 'Voice needs an internet connection. Check your data or Wi-Fi.',
+    'language-not-supported': 'This phone has no voice pack for that language. Change it in Settings, Voice scoring.',
+    aborted: 'Voice stopped before it finished. Try again.',
+  };
+  let settled = false;
+  const onResult = r.onresult;
+  r.onresult = (e) => { settled = true; onResult(e); };
+  r.onerror = (e) => { settled = true; toast(`${WHY[e.error] || 'Voice failed.'} (${e.error})`); };
+  r.onend = () => { if (!settled) toast('Voice ended without hearing a score. Try again. (no-result)'); };
   try { r.start(); toast('Listening. Say the score, for example "four" or "wide".'); } catch { toast('Voice is already listening'); }
 }
 
@@ -358,6 +373,7 @@ function playSeg(i) {
 replay.addEventListener('ended', () => { if (rev.urls.length) playSeg((rev.idx + 1) % rev.urls.length); });
 
 function closeReview() {
+  drsClose();
   replay.pause(); replay.removeAttribute('src');
   rev.urls.forEach((u) => URL.revokeObjectURL(u)); rev.urls = [];
   $('#review').hidden = true;
@@ -417,6 +433,112 @@ $('#closeReview').addEventListener('click', closeReview);
 $('#dlMeta').addEventListener('click', () =>
   download(`${rev.base}.json`, new Blob([JSON.stringify(clipDetails(), null, 2)], { type: 'application/json' })));
 $('#appeal').addEventListener('click', appeal);
+
+// ---------- DRS view: tap the stumps and the ball, get the path ----------
+const DRS_STEPS = [
+  ['bl', "Pause on a frame that shows both sets of stumps. Tap the BOTTOM of the LEFT stump at the batter's end."],
+  ['br', "Tap the BOTTOM of the RIGHT stump at the batter's end."],
+  ['bt', "Tap the TOP of the stumps at the batter's end."],
+  ['ol', "Tap the BOTTOM of the LEFT stump at the bowler's end."],
+  ['or', "Tap the BOTTOM of the RIGHT stump at the bowler's end."],
+  ['pitch', 'Step to the frame where the ball hits the ground. Tap the ball. No bounce? Tap "Full toss".'],
+  ['impact', 'Step to the frame where the ball hits the batter. Tap the ball.'],
+];
+const drs = { on: false, marks: {}, fullToss: false };
+const drsCanvas = $('#drsCanvas');
+const drsNext = () => DRS_STEPS.find(([k]) => !drs.marks[k] && !(k === 'pitch' && drs.fullToss));
+
+function drsOpen() {
+  Object.assign(drs, { on: true, marks: {}, fullToss: false });
+  replay.pause(); replay.controls = false;
+  drsCanvas.hidden = false; $('#drsPanel').hidden = false; $('#drsStart').hidden = true;
+  drsRender();
+}
+function drsClose() {
+  drs.on = false;
+  drsCanvas.hidden = true; $('#drsPanel').hidden = true; $('#drsStart').hidden = false;
+  replay.controls = true;
+}
+
+function drsRender() {
+  if (!drs.on) return;
+  const next = drsNext(), camera = $('#camPos').value, hand = $('#drsHand').value;
+  const done = DRS_STEPS.filter(([k]) => drs.marks[k]).length, total = DRS_STEPS.length - (drs.fullToss ? 1 : 0);
+  let r = null;
+  if (next) {
+    $('#drsStep').innerHTML = `<b>Mark ${done + 1} of ${total}</b>${esc(next[1])}`;
+    $('#drsOut').innerHTML = '';
+  } else {
+    r = solve(drs.marks, { aspect: replay.videoWidth / replay.videoHeight || 16 / 9, stride: +$('#drsStride').value, fullToss: drs.fullToss });
+    if (r.error) {
+      $('#drsStep').innerHTML = `<b>Could not work it out</b>${esc(r.error)}`;
+      $('#drsOut').innerHTML = '';
+    } else {
+      const pitching = side(r.pitching, hand, camera), impact = side(r.impact, hand, camera);
+      const NAME = { in_line: 'In line', outside_off: 'Outside off', outside_leg: 'Outside leg', full_toss: 'Full toss', hitting: 'Hitting', missing: 'Missing', clipping: "Umpire's call", unknown: 'Not known' };
+      // Colours follow the TV convention: red goes against the batter, green saves them, amber is close.
+      const tone = { in_line: 'against', full_toss: 'against', outside_off: 'close', outside_leg: 'saves', hitting: 'against', missing: 'saves', clipping: 'close', unknown: 'close' };
+      const tile = (label, v) => `<div class="tile ${tone[v]}"><small>${label}</small><b>${NAME[v]}</b></div>`;
+      $('#drsStep').innerHTML = '<b>Ball tracking</b>Path worked out from your marks. Change the batter or the stride below if it looks wrong.';
+      $('#drsOut').innerHTML = `<div class="tiles">${tile('Pitching', pitching)}${tile('Impact', impact)}${tile('Wickets', r.wickets)}</div>
+        <p class="muted">An estimate from your taps, using a straight path after the bounce: no swing or dip. ${r.wickets === 'clipping' ? "The ball is only clipping the stumps, so this stays with the on-field call. " : ''}${camera === 'side-on' || camera === 'other' ? 'This only works with the camera behind the stumps: check Camera position below. ' : ''}The no-ball, bat-first and shot questions below are still yours to answer.</p>`;
+      // Feed the three measured answers into the LBW rules; people answer the rest.
+      Object.assign(rev.answers, { pitched: pitching, impact, hitting: r.wickets === 'hitting' ? 'yes' : r.wickets === 'missing' ? 'no' : 'unsure' });
+      $('#revType').value = 'lbw';
+      document.querySelectorAll('#lbwForm select').forEach((s) => { if (rev.answers[s.dataset.q]) s.value = rev.answers[s.dataset.q]; });
+      syncReviewType();
+    }
+  }
+  drsDraw(r && !r.error ? r : null);
+}
+
+function drsDraw(r) {
+  const dpr = window.devicePixelRatio || 1, W = Math.round(drsCanvas.clientWidth * dpr), H = Math.round(drsCanvas.clientHeight * dpr);
+  if (drsCanvas.width !== W || drsCanvas.height !== H) { drsCanvas.width = W; drsCanvas.height = H; }
+  const g = drsCanvas.getContext('2d'), X = (p) => p.x * W, Y = (p) => p.y * H;
+  g.clearRect(0, 0, W, H);
+  const poly = (pts) => { g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p)))); g.closePath(); };
+  const dot = (p, radius, fill) => { g.beginPath(); g.arc(X(p), Y(p), radius, 0, 7); g.fillStyle = fill; g.fill(); g.lineWidth = 1.5 * dpr; g.strokeStyle = '#fff'; g.stroke(); };
+  if (r) {
+    const d = r.draw, hit = r.wickets === 'hitting' ? '#ff453a' : r.wickets === 'clipping' ? '#ffd60a' : '#30d158';
+    poly(d.corridor); g.fillStyle = 'rgba(64, 156, 255, 0.32)'; g.fill();           // wicket-to-wicket mat
+    poly(d.stumps); g.lineWidth = 2 * dpr; g.strokeStyle = '#fff'; g.stroke();
+    g.lineCap = 'round'; g.lineWidth = 5 * dpr;
+    if (d.pitch) { g.beginPath(); g.moveTo(X(d.pitch), Y(d.pitch)); g.lineTo(X(d.impact), Y(d.impact)); g.strokeStyle = '#ffd60a'; g.stroke(); }
+    if (d.wicket) {
+      g.setLineDash([10 * dpr, 8 * dpr]); g.beginPath(); g.moveTo(X(d.impact), Y(d.impact)); g.lineTo(X(d.wicket), Y(d.wicket)); g.strokeStyle = hit; g.stroke(); g.setLineDash([]);
+      dot(d.wicket, Math.max(6 * dpr, d.ballPx * W), hit);
+    }
+    if (d.pitch) dot(d.pitch, 6 * dpr, '#ffd60a');
+    dot(d.impact, 6 * dpr, '#fff');
+  } else {
+    const label = { bl: '1', br: '2', bt: '3', ol: '4', or: '5', pitch: 'P', impact: 'I' };
+    g.font = `${12 * dpr}px system-ui`;
+    for (const [k] of DRS_STEPS) {
+      const p = drs.marks[k]; if (!p) continue;
+      dot(p, 5 * dpr, '#ffd60a');
+      g.fillStyle = '#fff'; g.fillText(label[k], X(p) + 8 * dpr, Y(p) - 6 * dpr);
+    }
+  }
+}
+
+drsCanvas.addEventListener('pointerdown', (e) => {
+  const next = drsNext(); if (!drs.on || !next) return;
+  const b = drsCanvas.getBoundingClientRect();
+  drs.marks[next[0]] = { x: (e.clientX - b.left) / b.width, y: (e.clientY - b.top) / b.height };
+  drsRender();
+});
+$('#drsStart').addEventListener('click', drsOpen);
+$('#drsPlay').addEventListener('click', () => (replay.paused ? replay.play().catch(() => {}) : replay.pause()));
+$('#drsUndo').addEventListener('click', () => {
+  const last = [...DRS_STEPS].reverse().find(([k]) => drs.marks[k]);
+  if (last) delete drs.marks[last[0]]; else drs.fullToss = false;
+  drsRender();
+});
+$('#drsFull').addEventListener('click', () => { drs.fullToss = true; delete drs.marks.pitch; drsRender(); });
+$('#drsReset').addEventListener('click', () => { drs.marks = {}; drs.fullToss = false; drsRender(); });
+for (const id of ['#drsHand', '#drsStride', '#camPos']) $(id).addEventListener('change', drsRender);
+window.addEventListener('resize', drsRender);
 
 // ---------- ground ----------
 const editor = new GroundEditor($('#gCanvas'), renderGroundStats);

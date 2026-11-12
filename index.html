@@ -69,13 +69,33 @@ try {
 
     <div id="review" hidden>
       <h2>Review</h2>
-      <video id="replay" playsinline muted controls></video>
+      <div class="replay-wrap"><video id="replay" playsinline muted controls></video><canvas id="drsCanvas" hidden></canvas></div>
       <div class="row" id="speeds">
         <button data-rate="1">1x</button>
         <button data-rate="0.5">½ speed</button>
         <button data-rate="0.25" class="on">¼ speed</button>
         <button id="stepB">Back 1 frame</button>
         <button id="stepF">Forward 1 frame</button>
+      </div>
+      <button id="drsStart" class="primary big">Track the ball (DRS view)</button>
+      <div id="drsPanel" hidden>
+        <div id="drsStep" class="stats"></div>
+        <div class="row">
+          <button id="drsPlay">Play / pause</button>
+          <button id="drsUndo">Undo mark</button>
+          <button id="drsFull">Full toss</button>
+          <button id="drsReset">Start again</button>
+        </div>
+        <div class="grid2">
+          <label>Batter<select id="drsHand"><option value="right">Right-handed</option><option value="left">Left-handed</option></select></label>
+          <label>Where was the batter hit?<select id="drsStride">
+            <option value="0.03">Back, close to the stumps</option>
+            <option value="0.06" selected>On the crease</option>
+            <option value="0.1">On a forward stride</option>
+            <option value="0.15">Well down the pitch</option>
+          </select></label>
+        </div>
+        <div id="drsOut"></div>
       </div>
       <label>Decision type
         <select id="revType">
