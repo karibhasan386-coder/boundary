@@ -150,7 +150,8 @@ h2 { margin: 32px 0 16px; font: 400 30px/1.1 var(--serif); letter-spacing: -0.02
 h2:first-child { margin-top: 8px; }
 main { max-width: 560px; margin: 0 auto; padding: 24px 16px 112px; }
 .tab { display: none; }
-.tab.active { display: block; animation: enter 600ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* No fill mode: a finished animation that keeps holding opacity stops backdrop blur from seeing the page behind. */
+.tab.active { display: block; animation: enter 600ms cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .tab.active { animation: none; } }
 .muted { color: var(--muted); font-size: 13px; }
@@ -227,3 +228,60 @@ label.check input { width: 20px; height: 20px; margin: 0; accent-color: var(--ac
 .table td { padding: 10px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .table td:first-child { font-weight: 600; }
 #toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: var(--btn-radius); font-size: 14px; font-weight: 500; z-index: 5; max-width: calc(100% - 32px); }
+
+/* Dropdown lists are drawn by the phone, not by us: give them a solid colour so options stay readable. */
+select option, select optgroup { background-color: var(--menu, #FFFFFF); color: var(--menu-text, #111111); }
+:root[data-theme="night"] { --menu: #12241B; --menu-text: #EEF6F0; }
+:root[data-theme="tape"] { --menu: #1A1A1C; --menu-text: #F5F5F2; }
+
+/* ---------- Real glass (Pitch glass, Glass, Night match) ----------
+   Glass only reads as glass when something colourful moves behind it, so these themes get
+   drifting shapes, and every surface (not just the big panels) is translucent and blurred. */
+.shapes { display: none; }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) {
+  --frost: blur(14px) saturate(170%);
+  --edge: rgba(255, 255, 255, 0.34);
+  --shine: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+  --drop: 0 8px 32px rgba(13, 38, 38, 0.22);
+  --btn-radius: 18px; --radius: 26px;
+}
+:root[data-theme="pitchglass"] { --card: rgba(255, 255, 255, 0.24); --line: rgba(255, 255, 255, 0.4); --nav: rgba(255, 255, 255, 0.22); --b1: #2FBF71; --b2: #F4D35E; --b3: #E4572E; --b4: #58C4DD; --blob-alpha: 0.85; }
+:root[data-theme="glass"] { --card: rgba(255, 255, 255, 0.22); --line: rgba(255, 255, 255, 0.4); --nav: rgba(255, 255, 255, 0.2); --board-bg: rgba(255, 255, 255, 0.2); --b1: #5AC8FA; --b2: #FF6BD6; --b3: #FFD60A; --b4: #7D5CFF; --blob-alpha: 0.85; }
+:root[data-theme="night"] { --card: rgba(255, 255, 255, 0.09); --line: rgba(255, 255, 255, 0.18); --nav: rgba(255, 255, 255, 0.1); --edge: rgba(255, 255, 255, 0.2); --shine: inset 0 1px 0 rgba(255, 255, 255, 0.22); --drop: 0 8px 32px rgba(0, 0, 0, 0.5); --b1: #C7F464; --b2: #2EA05A; --b3: #3A7BD5; --b4: #C436EB; --blob-alpha: 0.6; }
+
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) .shapes { display: block; position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.shapes i { position: absolute; opacity: var(--blob-alpha, 0.8); will-change: transform; animation: drift 16s ease-in-out infinite; }
+.shapes i:nth-child(1) { top: 9%; left: 6%; width: 34vmin; height: 34vmin; border-radius: 50%; background: var(--b1); }
+.shapes i:nth-child(2) { top: 30%; right: -6%; width: 30vmin; height: 30vmin; border-radius: 22%; background: var(--b2); animation-duration: 21s; animation-delay: -5s; }
+.shapes i:nth-child(3) { bottom: 22%; left: -4%; width: 26vmin; height: 26vmin; border-radius: 50%; background: var(--b3); animation-duration: 19s; animation-delay: -9s; }
+.shapes i:nth-child(4) { bottom: 4%; right: 12%; width: 38vmin; height: 38vmin; border-radius: 30%; background: var(--b4); animation-duration: 24s; animation-delay: -13s; }
+.shapes i:nth-child(5) { top: 52%; left: 38%; width: 18vmin; height: 18vmin; border-radius: 50%; background: var(--b2); animation-duration: 18s; animation-delay: -3s; }
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(9vmin, 5vmin) rotate(30deg); }
+  50% { transform: translate(16vmin, -6vmin) rotate(70deg); }
+  75% { transform: translate(5vmin, -11vmin) rotate(25deg); }
+}
+@media (prefers-reduced-motion: reduce) { .shapes i { animation: none; } }
+
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) :is(button, .btn, select, input:not([type="checkbox"]), textarea, .chip, .board, .verdict, .stats, #themePanel, #toast) {
+  -webkit-backdrop-filter: var(--frost); backdrop-filter: var(--frost);
+  border: 1px solid var(--edge); box-shadow: var(--drop), var(--shine);
+}
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) :is(.runs button, .mods button, .row > button, .row > .btn, .swatch) { box-shadow: 0 4px 16px rgba(13, 38, 38, 0.14), var(--shine); }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) button.primary { background: color-mix(in srgb, var(--accent) 72%, transparent); border-color: var(--edge); }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) button.on { background: color-mix(in srgb, var(--yellow) 26%, transparent); border-color: var(--edge); }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) #toast { background: color-mix(in srgb, var(--text) 78%, transparent); }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) header { border-bottom: 0; }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) .item { border-bottom-color: var(--edge); }
+
+/* Floating pill tab bar */
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) nav {
+  left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 536px; margin: 0 auto; padding: 6px;
+  border: 1px solid var(--edge); border-radius: 9999px; box-shadow: var(--drop), var(--shine);
+  -webkit-backdrop-filter: blur(18px) saturate(180%); backdrop-filter: blur(18px) saturate(180%);
+}
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) nav button { max-width: none; min-height: 44px; padding: 10px 4px; border: 0; border-radius: 9999px; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) nav button.on { background: rgba(255, 255, 255, 0.3); box-shadow: var(--shine); }
+:root[data-theme="night"] nav button.on { background: rgba(255, 255, 255, 0.16); }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) main { padding-bottom: 128px; }
