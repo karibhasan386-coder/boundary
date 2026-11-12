@@ -2,7 +2,7 @@ import * as S from './scoring.js';
 import { QUESTIONS, decide } from './lbw.js';
 import { load, save } from './store.js';
 import { Camera } from './camera.js';
-import { BallTracker } from './tracker.js';
+import { BallTracker, PITCH_ZONE } from './tracker.js';
 import { GroundEditor, defaultGround, measure } from './ground.js';
 
 const $ = (s) => document.querySelector(s);
@@ -181,6 +181,7 @@ async function startSource(kind, file) {
     await cam.start(kind, file);
     if (live.videoWidth) stage.style.aspectRatio = `${live.videoWidth} / ${live.videoHeight}`;
     camMsg('');
+    $('#trackOn').checked = kind === 'demo'; // real footage: off until the user asks for it
     tracker.reset();
     $('#appeal').disabled = !cam.canReplay;
     if (!cam.canReplay) toast('Replay is not supported in this browser');
@@ -208,6 +209,12 @@ function drawOverlay() {
   const g = overlay.getContext('2d');
   g.clearRect(0, 0, W, H);
   const { trail, bounce } = track;
+  if (cam.kind && $('#trackOn').checked) { // the zone the tracker watches: keep the pitch inside it
+    const z = PITCH_ZONE;
+    g.setLineDash([8 * dpr, 6 * dpr]); g.lineWidth = 1.5 * dpr; g.strokeStyle = 'rgba(255,255,255,0.7)';
+    g.strokeRect(z.x0 * W, z.y0 * H, (z.x1 - z.x0) * W, (z.y1 - z.y0) * H);
+    g.setLineDash([]);
+  }
   if (trail.length) {
     g.lineWidth = 3 * dpr; g.strokeStyle = '#ffb703'; g.lineJoin = 'round';
     g.beginPath();
@@ -223,7 +230,7 @@ function drawOverlay() {
   }
   const text = !cam.kind ? 'Tracker idle.' : !$('#trackOn').checked ? 'Tracking is off.'
     : trail.length ? `${track.tracking ? 'Tracking ball' : 'Last ball'} · ${trail.length} points${bounce ? ' · pitch point found' : ''}`
-    : 'Watching for a ball…';
+    : 'Watching for a ball. Keep the pitch inside the dashed box.';
   if (text !== infoText) { infoText = text; $('#trackInfo').textContent = text; }
 }
 
@@ -428,6 +435,7 @@ historyEl.addEventListener('click', (e) => {
 // "preview" switch stands in for a real subscription check.
 const THEMES = [
   { id: 'pitch', name: 'Pitch', free: true, bar: '#F3F7EE', art: 'repeating-linear-gradient(90deg, #2C7A45 0 12px, #297241 12px 24px)' },
+  { id: 'pitchglass', name: 'Pitch glass', free: true, bar: '#D5EBCF', art: 'linear-gradient(135deg, #9FE0A8, #F6E7A6 55%, #7FD0A0)' },
   { id: 'paper', name: 'Paper', free: true, bar: '#FBFBFA', art: '#FFFFFF' },
   { id: 'glass', name: 'Glass', bar: '#DCE8F7', art: 'linear-gradient(135deg, #9BD3FF, #FFC2E2 55%, #B5F2CF)' },
   { id: 'night', name: 'Night match', bar: '#06120C', art: 'radial-gradient(circle at 15% 0%, #5c6b61 0%, #06120C 60%)' },
@@ -466,6 +474,13 @@ $('#premiumPreview').addEventListener('change', (e) => {
 });
 
 // ---------- boot ----------
+// Splash removes itself when its fade ends; a tap skips it; the timer is a safety net.
+const splash = $('#splash');
+const dropSplash = () => splash.remove();
+splash.addEventListener('animationend', (e) => { if (e.target === splash) dropSplash(); });
+splash.addEventListener('click', () => splash.classList.add('skip'));
+setTimeout(dropSplash, 3200);
+
 loadGround(defaultGround());
 applyTheme();
 renderScore();

@@ -11,8 +11,26 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;600&family=Instrument+Serif&display=swap">
 <link rel="stylesheet" href="css/styles.css">
+<script>
+// Apply the saved theme before first paint so the splash and app never flash the wrong colours.
+try {
+  var t = JSON.parse(localStorage.getItem('boundary.theme') || '"pitch"');
+  var free = t === 'pitch' || t === 'paper' || t === 'pitchglass';
+  if (t !== 'pitch' && (free || JSON.parse(localStorage.getItem('boundary.premiumPreview') || 'false'))) document.documentElement.dataset.theme = t;
+} catch (e) {}
+</script>
 </head>
 <body>
+<div id="splash" role="status" aria-label="Loading Boundary">
+  <div class="sp-scene">
+    <div class="sp-glow"></div>
+    <div class="sp-crease"></div>
+    <div class="sp-stumps"><i></i><i></i><i></i><b></b><b></b></div>
+    <div class="sp-ball"><span></span></div>
+    <div class="sp-word"><span>Boundary</span></div>
+    <div class="sp-tag">Every ball counts</div>
+  </div>
+</div>
 <header>
   <div class="brand">
     <svg viewBox="0 0 32 32" aria-hidden="true">
@@ -44,7 +62,7 @@
       <label class="btn">Video file<input type="file" id="fileSrc" accept="video/*" hidden></label>
     </div>
     <p class="muted">Ask everyone playing before you record. Video stays on this phone unless you download a clip.</p>
-    <label class="check"><input type="checkbox" id="trackOn" checked> Live ball tracking (experimental)</label>
+    <label class="check"><input type="checkbox" id="trackOn"> Ball tracking (experimental, not reliable on real matches yet)</label>
     <div id="trackInfo" class="muted">Tracker idle.</div>
     <button id="appeal" class="big primary" disabled>Appeal · replay the last balls</button>
 

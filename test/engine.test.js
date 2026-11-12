@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import * as S from '../js/scoring.js';
 import { decide } from '../js/lbw.js';
-import { findBlobs, detectBounce } from '../js/tracker.js';
+import { findBlobs, detectBounce, stepTracks, scorePath } from '../js/tracker.js';
 import { measure } from '../js/ground.js';
 
 let n = 0;
@@ -98,6 +98,26 @@ test('tracker: bounce is where the ball stops going down', () => {
   const b = detectBounce(ys.map((y, i) => ({ x: 0.5, y, t: i })));
   assert.equal(b.y, 0.5);
   assert.equal(detectBounce(ys.slice(0, 4).map((y) => ({ x: 0.5, y }))), null);
+});
+
+test('tracker: a fast straight blob is picked out from slow jittering clutter', () => {
+  let tracks = [];
+  for (let f = 0; f < 10; f++) {
+    const cands = [{ x: 20 + f * 8, y: 40 + f * 2 }]; // ball: 8 px per frame
+    for (let k = 0; k < 12; k++) cands.push({ x: 100 + k * 15 + (f % 2), y: 120 + ((f + k) % 2) }); // limbs wobbling 1 px
+    tracks = stepTracks(tracks, cands);
+  }
+  const good = tracks.filter((t) => scorePath(t.pts));
+  assert.equal(good.length, 1);
+  assert.equal(good[0].pts.length, 10);
+  assert.equal(good[0].pts[9].x, 92);
+});
+test('tracker: slow or wandering paths are not called a ball', () => {
+  const slow = Array.from({ length: 8 }, (_, i) => ({ x: i, y: 0 }));
+  const zigzag = Array.from({ length: 8 }, (_, i) => ({ x: (i % 2) * 10, y: 0 }));
+  assert.equal(scorePath(slow), null);
+  assert.equal(scorePath(zigzag), null);
+  assert.ok(scorePath(Array.from({ length: 8 }, (_, i) => ({ x: i * 6, y: i }))));
 });
 
 test('ground: square field distances and area', () => {
