@@ -13,7 +13,21 @@
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-<header><h1>Boundary</h1><span class="muted">Offline · data stays on this phone</span></header>
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <circle class="ball" cx="16" cy="16" r="15"/>
+      <path class="stitch" d="M10 3.5c4 8 4 17 0 25M22 3.5c-4 8-4 17 0 25" fill="none" stroke-width="1.6" stroke-dasharray="2.4 2.2" stroke-linecap="round"/>
+    </svg>
+    <h1>Boundary</h1>
+  </div>
+  <button id="themeBtn" aria-expanded="false" aria-controls="themePanel">Themes</button>
+</header>
+<div id="themePanel" hidden>
+  <div class="swatches" id="swatches"></div>
+  <label class="check"><input type="checkbox" id="premiumPreview"> Preview premium themes (free during testing)</label>
+  <p class="muted">Works offline. Scores and video stay on this phone.</p>
+</div>
 
 <main>
   <section id="tab-score" class="tab active"></section>

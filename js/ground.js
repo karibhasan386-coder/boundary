@@ -84,22 +84,27 @@ export class GroundEditor {
 
   draw() {
     const { g, c, ground } = this, W = c.width, H = c.height, pts = ground.points;
-    g.fillStyle = '#F7F6F3'; g.fillRect(0, 0, W, H);
+    // Colours follow the active theme.
+    const cs = getComputedStyle(document.documentElement), v = (n, d) => cs.getPropertyValue(n).trim() || d;
+    const stroke = v('--stroke', '#111111');
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = v('--canvas-bg', '#F7F6F3'); g.fillRect(0, 0, W, H);
     g.beginPath();
     pts.forEach((p, i) => (i ? g.lineTo(p.x * W, p.y * H) : g.moveTo(p.x * W, p.y * H)));
     g.closePath();
-    g.fillStyle = '#EDF3EC'; g.fill();
-    g.lineWidth = 3; g.strokeStyle = '#111111'; g.stroke();
+    g.fillStyle = v('--field', '#EDF3EC'); g.fill();
+    g.setLineDash([14, 8]); g.lineWidth = 4; g.strokeStyle = stroke; g.stroke(); // the boundary rope
+    g.setLineDash([]);
 
     const pl = ((ground.pitchYards * 0.9144) / ground.widthM) * H, pw = Math.max(6, (3.05 / ground.widthM) * W);
-    g.fillStyle = '#FBF3DB'; g.fillRect(W / 2 - pw / 2, H / 2 - pl / 2, pw, pl);
-    g.lineWidth = 2; g.strokeStyle = '#956400'; g.strokeRect(W / 2 - pw / 2, H / 2 - pl / 2, pw, pl);
+    g.fillStyle = v('--pitch', '#FBF3DB'); g.fillRect(W / 2 - pw / 2, H / 2 - pl / 2, pw, pl);
+    g.lineWidth = 2; g.strokeStyle = v('--pitch-line', '#956400'); g.strokeRect(W / 2 - pw / 2, H / 2 - pl / 2, pw, pl);
 
     pts.forEach((p, i) => {
       const r = i === this.sel ? 15 : 11;
       g.beginPath(); g.arc(p.x * W, p.y * H, r, 0, 7);
-      g.fillStyle = i === this.sel ? '#111111' : '#FFFFFF'; g.fill();
-      g.lineWidth = 3; g.strokeStyle = '#111111'; g.stroke();
+      g.fillStyle = i === this.sel ? stroke : v('--dot', '#FFFFFF'); g.fill();
+      g.lineWidth = 3; g.strokeStyle = stroke; g.stroke();
     });
   }
 }

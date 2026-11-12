@@ -423,7 +423,50 @@ historyEl.addEventListener('click', (e) => {
   if (shareId) { const m = db.matches.find((x) => x.id === +shareId); if (m) share(m); }
 });
 
+// ---------- themes ----------
+// Premium themes are only marked, not sold: there is no payment system yet, so the
+// "preview" switch stands in for a real subscription check.
+const THEMES = [
+  { id: 'pitch', name: 'Pitch', free: true, bar: '#F3F7EE', art: 'repeating-linear-gradient(90deg, #2C7A45 0 12px, #297241 12px 24px)' },
+  { id: 'paper', name: 'Paper', free: true, bar: '#FBFBFA', art: '#FFFFFF' },
+  { id: 'glass', name: 'Glass', bar: '#DCE8F7', art: 'linear-gradient(135deg, #9BD3FF, #FFC2E2 55%, #B5F2CF)' },
+  { id: 'night', name: 'Night match', bar: '#06120C', art: 'radial-gradient(circle at 15% 0%, #5c6b61 0%, #06120C 60%)' },
+  { id: 'whites', name: 'Test whites', bar: '#FAF5E9', art: 'linear-gradient(90deg, #FFFDF7 0 70%, #7A1F1F 70%)' },
+  { id: 'tape', name: 'Tape ball', bar: '#0F0F10', art: 'repeating-linear-gradient(135deg, #FFD400 0 10px, #111111 10px 20px)' },
+];
+const look = { theme: load('theme', 'pitch'), preview: load('premiumPreview', false) };
+
+function applyTheme() {
+  let t = THEMES.find((x) => x.id === look.theme) || THEMES[0];
+  if (!t.free && !look.preview) t = THEMES[0];
+  if (t.id === 'pitch') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t.id;
+  document.querySelector('meta[name="theme-color"]').content = t.bar;
+  $('#premiumPreview').checked = look.preview;
+  $('#swatches').innerHTML = THEMES.map((x) => `
+    <button class="swatch${x.id === t.id ? ' on' : ''}" data-theme-id="${x.id}" aria-pressed="${x.id === t.id}">
+      <i style="background:${x.art}"></i><b>${x.name}</b>
+      <span class="tag${x.free ? ' free' : ''}">${x.free ? 'Free' : 'Premium'}</span>
+    </button>`).join('');
+  editor.draw();
+}
+
+$('#themeBtn').addEventListener('click', () => {
+  const p = $('#themePanel');
+  p.hidden = !p.hidden; $('#themeBtn').setAttribute('aria-expanded', String(!p.hidden));
+});
+$('#swatches').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-theme-id]'); if (!b) return;
+  const t = THEMES.find((x) => x.id === b.dataset.themeId);
+  if (!t.free && !look.preview) { toast('Premium theme. Tick "Preview premium themes" to try it.'); return; }
+  look.theme = t.id; save('theme', t.id); applyTheme();
+});
+$('#premiumPreview').addEventListener('change', (e) => {
+  look.preview = e.target.checked; save('premiumPreview', look.preview); applyTheme();
+});
+
 // ---------- boot ----------
 loadGround(defaultGround());
+applyTheme();
 renderScore();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
