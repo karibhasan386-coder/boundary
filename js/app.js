@@ -683,7 +683,7 @@ historyEl.addEventListener('click', (e) => {
 // ---------- settings ----------
 const SETTINGS = [
   ['Account', [
-    { label: 'Sign in', info: () => { const u = auth.currentUser(); return u ? `Signed in as ${u.name}${u.email ? ` (${u.email})` : ''}.` : auth.configured ? 'Optional. Sign in with Google to carry your plan to another phone.' : 'Not switched on yet. The app works without an account.'; }, action: () => (auth.currentUser() ? ['signout', 'Sign out'] : ['signin', 'Continue with Google']) },
+    { label: 'Sign in', info: () => { const u = auth.currentUser(); return u ? `Signed in as ${u.name}${u.email ? ` (${u.email})` : ''}.` : auth.configured ? 'Optional. Sign in with Google to carry your plan to another phone.' : 'Coming soon. Google sign-in is built but waiting for its set-up. The app works fully without an account.'; }, action: () => (auth.currentUser() ? ['signout', 'Sign out'] : auth.configured ? ['signin', 'Continue with Google'] : null) },
     { label: 'Plan', info: () => 'Free. Every theme and everything in the app today is free. Paid extras are not on sale yet.' },
   ]],
   ['Match defaults', [
@@ -735,7 +735,7 @@ function renderSettings() {
     if (d.opts) control = `<select data-pref="${d.k}">${d.opts.map(([v, l]) => `<option value="${v}"${String(prefs[d.k]) === String(v) ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
     else if (d.num) control = `<input type="number" data-pref="${d.k}" min="${d.num[0]}" max="${d.num[1]}" value="${prefs[d.k]}">`;
     else if (d.bool) control = `<input type="checkbox" data-pref="${d.k}"${prefs[d.k] ? ' checked' : ''} aria-label="${esc(d.label)}">`;
-    else if (d.action) { const act = typeof d.action === 'function' ? d.action() : d.action; control = `<button data-do="${act[0]}"${d.danger ? ' class="danger"' : ''}>${ui.armed === act[0] ? 'Tap again' : act[1]}</button>`; }
+    else if (d.action && (typeof d.action !== 'function' || d.action())) { const act = typeof d.action === 'function' ? d.action() : d.action; control = `<button data-do="${act[0]}"${d.danger ? ' class="danger"' : ''}>${ui.armed === act[0] ? 'Tap again' : act[1]}</button>`; }
     const note = d.info ? d.info() : d.note;
     return `<div class="set"><span>${esc(d.label)}${note ? `<small>${esc(note)}</small>` : ''}</span>${control}</div>`;
   };
