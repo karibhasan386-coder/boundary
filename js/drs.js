@@ -43,13 +43,15 @@ export function solve(marks, opts = {}) {
   if (!(stumpH > 0.5)) return { error: 'The top of the stumps should be above the bottom. Mark the stumps again.' };
 
   const Zi = Zb + stride * L, yi = groundY(Zi);
-  const I = { X: (impact.x - centre(yi)) / half(yi), H: (yi - impact.y) / half(yi), Z: Zi };
+  const along = (Z) => (Z - Zo) / (Zb - Zo); // 0 at the bowler's stumps, 1 at the batter's
+  const I = { X: (impact.x - centre(yi)) / half(yi), H: (yi - impact.y) / half(yi), Z: Zi, u: along(Zi) };
 
   let P = null, W = null;
   if (!opts.fullToss) {
     const pitch = sq(marks.pitch);
     if ((pitch.y - V.y) * (yb - V.y) <= 0) return { error: 'The pitch point is above the horizon. Tap the ball where it hits the ground.' };
     P = { X: (pitch.x - centre(pitch.y)) / half(pitch.y), H: 0, Z: depth(pitch.y) };
+    P.u = along(P.Z);
     if ((P.Z - Zi) * L <= 0) return { error: 'The ball must pitch before it reaches the batter. Check the pitch point, or choose a longer stride.' };
     const t = (Zb - Zi) / (Zi - P.Z);
     W = { X: I.X + (I.X - P.X) * t, H: I.H + (I.H - P.H) * t };

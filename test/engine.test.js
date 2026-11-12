@@ -5,6 +5,7 @@ import { findBlobs, detectBounce, stepTracks, scorePath } from '../js/tracker.js
 import { measure } from '../js/ground.js';
 import { parseScore, describe } from '../js/voice.js';
 import { solve, side } from '../js/drs.js';
+import { ballAt } from '../js/hawkview.js';
 
 let n = 0;
 const test = (name, fn) => { fn(); n++; console.log(`ok - ${name}`); };
@@ -186,6 +187,22 @@ test('DRS: full toss, bad marks, and off or leg side', () => {
   assert.equal(side('right', 'left', 'behind-bowler'), 'outside_off');
   assert.equal(side('right', 'right', 'behind-batter'), 'outside_off');
   assert.equal(side('in_line', 'left'), 'in_line');
+});
+
+test('decision picture: the ball passes through the marked points', () => {
+  const r = solve(ballMarks([0.05, 0, 17], [0.03, 0.3, ZI]), { aspect: ASPECT, stride: STRIDE });
+  assert.ok(Math.abs(r.P.u - (17 - ZO) / 20.12) < 1e-6);
+  assert.ok(Math.abs(r.I.u - (1 - STRIDE)) < 1e-6);
+  assert.ok(ballAt(r, 0).H > 10);                                   // released high
+  assert.ok(Math.abs(ballAt(r, r.P.u).H) < 1e-9);                   // on the ground at the bounce
+  assert.ok(Math.abs(ballAt(r, r.P.u).X - r.P.X) < 1e-9);
+  const hit = ballAt(r, r.I.u);
+  assert.ok(Math.abs(hit.H - r.I.H) < 1e-9 && Math.abs(hit.X - r.I.X) < 1e-9);
+  const end = ballAt(r, 1);
+  assert.equal(end.phase, 'projected');
+  assert.ok(Math.abs(end.X - r.W.X) < 1e-9 && Math.abs(end.H - r.W.H) < 1e-9);
+  const ft = solve({ ...stumpMarks, impact: shoot(0, 0.4, ZI) }, { aspect: ASPECT, stride: STRIDE, fullToss: true });
+  assert.equal(ballAt(ft, 1).phase, 'stopped');                     // full toss: no projection
 });
 
 test('ground: square field distances and area', () => {

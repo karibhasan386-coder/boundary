@@ -341,3 +341,29 @@ nav button { font-size: 13px; }
 #inapp .btn, #inapp button { min-height: 44px; padding: 8px 14px; font-size: 14px; flex: 1; }
 #inapp .btn { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 @media (min-width: 560px) { #inapp { margin: 12px auto 0; } }
+
+/* ---------- Decision picture ---------- */
+#hawk { display: block; width: 100%; aspect-ratio: 16 / 9; margin: 12px 0; border-radius: var(--radius); border: 1px solid var(--line); }
+.checks { margin: 8px 0; }
+.checks .check { margin: 8px 0; }
+.tile { transition: opacity 300ms, transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.tile.wait { opacity: 0.3; transform: scale(0.96); }
+.tile.wait b { visibility: hidden; }
+.banner { margin: 12px 0; padding: 20px 16px; border-radius: var(--radius); text-align: center; color: #fff; opacity: 0; transform: scale(0.92); transition: opacity 350ms, transform 450ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.banner.show { opacity: 1; transform: none; }
+.banner b { display: block; font: 400 52px/1 var(--serif); letter-spacing: 0.02em; }
+.banner span { display: block; margin-top: 8px; font-size: 14px; opacity: 0.92; }
+.banner.out { background: #c62828; }
+.banner.notout { background: #1f8a3b; }
+.banner.call { background: #f5b301; color: #1a1300; }
+#drsAgain { width: 100%; }
+
+/* Score actions sit in a tidy 2 x 2 block instead of wrapping unevenly */
+.row.actions { display: grid; grid-template-columns: 1fr 1fr; }
+
+/* Glass themes: softer shapes and slightly more solid panels, so text stays easy to read */
+:root[data-theme="pitchglass"] { --card: rgba(255, 255, 255, 0.4); --blob-alpha: 0.55; }
+:root[data-theme="glass"] { --card: rgba(255, 255, 255, 0.4); --board-bg: rgba(255, 255, 255, 0.34); --blob-alpha: 0.55; }
+:root[data-theme="night"] { --card: rgba(255, 255, 255, 0.12); --blob-alpha: 0.4; }
+.shapes i { filter: blur(6px); }
+:root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) { --frost: blur(20px) saturate(170%); }

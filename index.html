@@ -15,8 +15,7 @@
 // Apply the saved theme before first paint so the splash and app never flash the wrong colours.
 try {
   var t = JSON.parse(localStorage.getItem('boundary.theme') || '"pitch"');
-  var free = t === 'pitch' || t === 'paper' || t === 'pitchglass';
-  if (t !== 'pitch' && (free || JSON.parse(localStorage.getItem('boundary.premiumPreview') || 'false'))) document.documentElement.dataset.theme = t;
+  if (t !== 'pitch') document.documentElement.dataset.theme = t;
 } catch (e) {}
 </script>
 </head>
@@ -49,7 +48,6 @@ try {
 </div>
 <div id="themePanel" hidden>
   <div class="swatches" id="swatches"></div>
-  <label class="check"><input type="checkbox" id="premiumPreview"> Preview premium themes (free during testing)</label>
   <p class="muted">Works offline. Scores and video stay on this phone.</p>
 </div>
 
@@ -100,7 +98,14 @@ try {
             <option value="0.15">Well down the pitch</option>
           </select></label>
         </div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="drsNoBall"> It was a no-ball</label>
+          <label class="check"><input type="checkbox" id="drsBat"> It hit the bat first</label>
+          <label class="check"><input type="checkbox" id="drsNoShot"> The batter offered no shot</label>
+        </div>
+        <canvas id="hawk" hidden></canvas>
         <div id="drsOut"></div>
+        <button id="drsAgain" hidden>Play the decision again</button>
       </div>
       <label>Decision type
         <select id="revType">

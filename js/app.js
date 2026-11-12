@@ -6,6 +6,8 @@ import { BallTracker, PITCH_ZONE } from './tracker.js';
 import { GroundEditor, defaultGround, measure } from './ground.js';
 import { parseScore, describe } from './voice.js';
 import { solve, side } from './drs.js';
+import { drawScene } from './hawkview.js';
+import * as auth from './auth.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -128,7 +130,7 @@ function renderScore() {
       ${ui.wicket ? `<label>How out<select id="wkType">${wkTypes.map((w) => `<option>${w}</option>`).join('')}</select></label>` : ''}
       <p class="muted">${ui.extra || ui.wicket ? 'Now tap the runs for this ball.' : 'Tap the runs scored. Tap Wide / No-ball / Wicket first if needed.'}</p>
       <div class="runs">${[0, 1, 2, 3, 4, 6].map((n) => `<button data-runs="${n}">${n}</button>`).join('')}</div>
-      <div class="row">
+      <div class="row actions">
         <button data-act="undo">Undo</button>
         <button data-act="voice">Voice</button>
         <button data-act="review" class="danger">Appeal / review</button>
@@ -461,7 +463,7 @@ const DRS_STEPS = [
   ['pitch', 'Step to the frame where the ball hits the ground. Tap the ball. No bounce? Tap "Full toss".'],
   ['impact', 'Step to the frame where the ball hits the batter. Tap the ball.'],
 ];
-const drs = { on: false, marks: {}, fullToss: false };
+const drs = { on: false, marks: {}, fullToss: false, result: null };
 const drsCanvas = $('#drsCanvas');
 const drsNext = () => DRS_STEPS.find(([k]) => !drs.marks[k] && !(k === 'pitch' && drs.fullToss));
 
@@ -475,6 +477,30 @@ function drsClose() {
   drs.on = false;
   drsCanvas.hidden = true; $('#drsPanel').hidden = true; $('#drsStart').hidden = false;
   replay.controls = true;
+  cancelAnimationFrame(hawkRaf); clearTimeout(hawkTimer); drs.result = null;
+}
+
+let hawkRaf = 0, hawkTimer = 0;
+
+// Fly the ball down the drawn pitch, lighting each tile as the ball gets there, then show the verdict.
+function playDecision() {
+  cancelAnimationFrame(hawkRaf);
+  const r = drs.result; if (!r) return;
+  const c = $('#hawk'), dpr = window.devicePixelRatio || 1;
+  const W = Math.round(c.clientWidth * dpr), H = Math.round(W * 0.5625);
+  c.width = W; c.height = H;
+  const g = c.getContext('2d'), end = r.W ? 1 : r.I.u, ms = prefs.reduceMotion ? 1 : 2400, t0 = performance.now();
+  document.querySelectorAll('#drsOut .tile').forEach((t) => t.classList.add('wait'));
+  $('#drsBanner')?.classList.remove('show');
+  const tick = (now) => {
+    const k = Math.min(1, (now - t0) / ms), u = end * k, final = k === 1;
+    drawScene(g, W, H, r, u, final);
+    document.querySelectorAll('#drsOut .tile').forEach((t) => { if (final || u >= +t.dataset.at) t.classList.remove('wait'); }); // the Wickets tile (at = 2) waits for the end
+    if (final) { clearTimeout(hawkTimer); $('#drsBanner')?.classList.add('show'); } else hawkRaf = requestAnimationFrame(tick);
+  };
+  hawkRaf = requestAnimationFrame(tick);
+  // Safety net: if the phone pauses animation (screen dimmed, tab in the background), still show the result.
+  clearTimeout(hawkTimer); hawkTimer = setTimeout(() => { cancelAnimationFrame(hawkRaf); tick(t0 + ms); }, ms + 500);
 }
 
 function drsRender() {
@@ -482,28 +508,41 @@ function drsRender() {
   const next = drsNext(), camera = $('#camPos').value, hand = $('#drsHand').value;
   const done = DRS_STEPS.filter(([k]) => drs.marks[k]).length, total = DRS_STEPS.length - (drs.fullToss ? 1 : 0);
   let r = null;
+  cancelAnimationFrame(hawkRaf); clearTimeout(hawkTimer);
+  drs.result = null; $('#hawk').hidden = true; $('#drsAgain').hidden = true; $('#drsOut').innerHTML = '';
   if (next) {
     $('#drsStep').innerHTML = `<b>Mark ${done + 1} of ${total}</b>${esc(next[1])}`;
-    $('#drsOut').innerHTML = '';
   } else {
     r = solve(drs.marks, { aspect: replay.videoWidth / replay.videoHeight || 16 / 9, stride: +$('#drsStride').value, fullToss: drs.fullToss });
     if (r.error) {
       $('#drsStep').innerHTML = `<b>Could not work it out</b>${esc(r.error)}`;
-      $('#drsOut').innerHTML = '';
     } else {
       const pitching = side(r.pitching, hand, camera), impact = side(r.impact, hand, camera);
+      // Three answers are measured from the taps; three come from the tick boxes.
+      Object.assign(rev.answers, {
+        pitched: pitching, impact, hitting: r.wickets === 'hitting' ? 'yes' : r.wickets === 'missing' ? 'no' : 'unsure',
+        noBall: $('#drsNoBall').checked ? 'yes' : 'no', batFirst: $('#drsBat').checked ? 'yes' : 'no', shot: $('#drsNoShot').checked ? 'no' : 'yes',
+      });
+      $('#revType').value = 'lbw';
+      document.querySelectorAll('#lbwForm select').forEach((sel) => { if (rev.answers[sel.dataset.q]) sel.value = rev.answers[sel.dataset.q]; });
+      syncReviewType();
+
+      const d = decide(rev.answers), clipping = r.wickets === 'clipping';
+      const kind = d.verdict === 'OUT' ? 'out' : d.verdict === 'NOT OUT' ? 'notout' : 'call';
+      const word = kind === 'call' ? (clipping ? "UMPIRE'S CALL" : 'CANNOT DECIDE') : d.verdict;
+      const why = kind === 'out' ? 'Every check goes against the batter.'
+        : kind === 'notout' ? d.reasons[0]
+        : clipping ? 'The ball is only clipping the stumps, so the on-field decision stands.' : 'A full toss cannot be projected on to the stumps from these marks.';
       const NAME = { in_line: 'In line', outside_off: 'Outside off', outside_leg: 'Outside leg', full_toss: 'Full toss', hitting: 'Hitting', missing: 'Missing', clipping: "Umpire's call", unknown: 'Not known' };
       // Colours follow the TV convention: red goes against the batter, green saves them, amber is close.
       const tone = { in_line: 'against', full_toss: 'against', outside_off: 'close', outside_leg: 'saves', hitting: 'against', missing: 'saves', clipping: 'close', unknown: 'close' };
-      const tile = (label, v) => `<div class="tile ${tone[v]}"><small>${label}</small><b>${NAME[v]}</b></div>`;
-      $('#drsStep').innerHTML = '<b>Ball tracking</b>Path worked out from your marks. Change the batter or the stride below if it looks wrong.';
-      $('#drsOut').innerHTML = `<div class="tiles">${tile('Pitching', pitching)}${tile('Impact', impact)}${tile('Wickets', r.wickets)}</div>
-        <p class="muted">An estimate from your taps, using a straight path after the bounce: no swing or dip. ${r.wickets === 'clipping' ? "The ball is only clipping the stumps, so this stays with the on-field call. " : ''}${camera === 'side-on' || camera === 'other' ? 'This only works with the camera behind the stumps: check Camera position below. ' : ''}The no-ball, bat-first and shot questions below are still yours to answer.</p>`;
-      // Feed the three measured answers into the LBW rules; people answer the rest.
-      Object.assign(rev.answers, { pitched: pitching, impact, hitting: r.wickets === 'hitting' ? 'yes' : r.wickets === 'missing' ? 'no' : 'unsure' });
-      $('#revType').value = 'lbw';
-      document.querySelectorAll('#lbwForm select').forEach((s) => { if (rev.answers[s.dataset.q]) s.value = rev.answers[s.dataset.q]; });
-      syncReviewType();
+      const tile = (label, v, at) => `<div class="tile wait ${tone[v]}" data-at="${at}"><small>${label}</small><b>${NAME[v]}</b></div>`;
+      $('#drsStep').innerHTML = '<b>Decision</b>Worked out from your marks. Change the batter, the stride or the tick boxes if anything is wrong.';
+      $('#drsOut').innerHTML = `<div class="tiles">${tile('Pitching', pitching, r.P ? r.P.u : 0)}${tile('Impact', impact, r.I.u)}${tile('Wickets', r.wickets, 2)}</div>
+        <div id="drsBanner" class="banner ${kind}"><b>${word}</b><span>${esc(why)}</span></div>
+        <p class="muted">Yellow dot: where it pitched. Red path: bounce to pad. Blue path: where it was going. An estimate from your taps with a straight path after the bounce, so no swing or dip. The flight before the bounce is drawn for effect.${camera === 'side-on' || camera === 'other' ? ' This only works with the camera behind the stumps: check Camera position below.' : ''}</p>`;
+      drs.result = r; $('#hawk').hidden = false; $('#drsAgain').hidden = false;
+      playDecision();
     }
   }
   drsDraw(r && !r.error ? r : null);
@@ -554,7 +593,8 @@ $('#drsUndo').addEventListener('click', () => {
 });
 $('#drsFull').addEventListener('click', () => { drs.fullToss = true; delete drs.marks.pitch; drsRender(); });
 $('#drsReset').addEventListener('click', () => { drs.marks = {}; drs.fullToss = false; drsRender(); });
-for (const id of ['#drsHand', '#drsStride', '#camPos']) $(id).addEventListener('change', drsRender);
+for (const id of ['#drsHand', '#drsStride', '#camPos', '#drsNoBall', '#drsBat', '#drsNoShot']) $(id).addEventListener('change', drsRender);
+$('#drsAgain').addEventListener('click', playDecision);
 window.addEventListener('resize', drsRender);
 
 // ---------- ground ----------
@@ -642,6 +682,10 @@ historyEl.addEventListener('click', (e) => {
 
 // ---------- settings ----------
 const SETTINGS = [
+  ['Account', [
+    { label: 'Sign in', info: () => { const u = auth.currentUser(); return u ? `Signed in as ${u.name}${u.email ? ` (${u.email})` : ''}.` : auth.configured ? 'Optional. Sign in with Google to carry your plan to another phone.' : 'Not switched on yet. The app works without an account.'; }, action: () => (auth.currentUser() ? ['signout', 'Sign out'] : ['signin', 'Continue with Google']) },
+    { label: 'Plan', info: () => 'Free. Every theme and everything in the app today is free. Paid extras are not on sale yet.' },
+  ]],
   ['Match defaults', [
     { k: 'ball', label: 'Default ball', opts: [['tape', 'Tape ball'], ['tennis', 'Tennis ball'], ['leather', 'Leather ball']] },
     { k: 'overs', label: 'Default overs', num: [1, 50] },
@@ -673,7 +717,7 @@ const SETTINGS = [
   ['About', [
     { label: 'Version', info: () => '0.4 (test build)' },
     { label: 'What the AI can and cannot do', info: () => 'Decisions come from the replay and your answers. Ball tracking is experimental and is not an umpire.' },
-    { label: 'Privacy', info: () => 'No account. Scores and video stay on this phone unless you download or share them.' },
+    { label: 'Privacy', info: () => 'Scores and video stay on this phone unless you download or share them. Signing in is optional.' },
   ]],
 ];
 
@@ -691,7 +735,7 @@ function renderSettings() {
     if (d.opts) control = `<select data-pref="${d.k}">${d.opts.map(([v, l]) => `<option value="${v}"${String(prefs[d.k]) === String(v) ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
     else if (d.num) control = `<input type="number" data-pref="${d.k}" min="${d.num[0]}" max="${d.num[1]}" value="${prefs[d.k]}">`;
     else if (d.bool) control = `<input type="checkbox" data-pref="${d.k}"${prefs[d.k] ? ' checked' : ''} aria-label="${esc(d.label)}">`;
-    else if (d.action) control = `<button data-do="${d.action[0]}"${d.danger ? ' class="danger"' : ''}>${ui.armed === d.action[0] ? 'Tap again' : d.action[1]}</button>`;
+    else if (d.action) { const act = typeof d.action === 'function' ? d.action() : d.action; control = `<button data-do="${act[0]}"${d.danger ? ' class="danger"' : ''}>${ui.armed === act[0] ? 'Tap again' : act[1]}</button>`; }
     const note = d.info ? d.info() : d.note;
     return `<div class="set"><span>${esc(d.label)}${note ? `<small>${esc(note)}</small>` : ''}</span>${control}</div>`;
   };
@@ -715,6 +759,12 @@ $('#setList').addEventListener('change', (e) => {
 $('#setList').addEventListener('click', (e) => {
   const act = e.target.closest('[data-do]')?.dataset.do; if (!act) return;
   if (act === 'board') { openBoard(); return; }
+  if (act === 'signin') {
+    if (!auth.configured) { toast('Sign-in is not switched on yet'); return; }
+    auth.signIn().catch((err) => toast(err.code === 'auth/popup-closed-by-user' ? 'Sign-in was cancelled' : `Could not sign in (${err.code || err.message})`));
+    return;
+  }
+  if (act === 'signout') { auth.signOut().then(() => toast('Signed out')).catch(() => toast('Could not sign out')); return; }
   if (act === 'export') {
     const data = { app: 'boundary', version: 1, exported: new Date().toISOString(), matches: db.matches, grounds: db.grounds, reviews: db.reviews, activeId: db.activeId, prefs, theme: look.theme };
     download(`boundary-backup-${new Date().toISOString().slice(0, 10)}.json`, new Blob([JSON.stringify(data)], { type: 'application/json' }));
@@ -768,30 +818,26 @@ $('#boardExit').addEventListener('click', () => {
 window.addEventListener('storage', () => { if (!$('#board').hidden) renderBoard(); });
 
 // ---------- themes ----------
-// Premium themes are only marked, not sold: there is no payment system yet, so the
-// "preview" switch stands in for a real subscription check.
+// Every theme is free. Paid features, when they exist, will be features, not looks.
 const THEMES = [
-  { id: 'pitch', name: 'Pitch', free: true, bar: '#F3F7EE', art: 'repeating-linear-gradient(90deg, #2C7A45 0 12px, #297241 12px 24px)' },
-  { id: 'pitchglass', name: 'Pitch glass', free: true, bar: '#D5EBCF', art: 'linear-gradient(135deg, #9FE0A8, #F6E7A6 55%, #7FD0A0)' },
-  { id: 'paper', name: 'Paper', free: true, bar: '#FBFBFA', art: '#FFFFFF' },
+  { id: 'pitch', name: 'Pitch', bar: '#F3F7EE', art: 'repeating-linear-gradient(90deg, #2C7A45 0 12px, #297241 12px 24px)' },
+  { id: 'pitchglass', name: 'Pitch glass', bar: '#D5EBCF', art: 'linear-gradient(135deg, #9FE0A8, #F6E7A6 55%, #7FD0A0)' },
+  { id: 'paper', name: 'Paper', bar: '#FBFBFA', art: '#FFFFFF' },
   { id: 'glass', name: 'Glass', bar: '#DCE8F7', art: 'linear-gradient(135deg, #9BD3FF, #FFC2E2 55%, #B5F2CF)' },
   { id: 'night', name: 'Night match', bar: '#06120C', art: 'radial-gradient(circle at 15% 0%, #5c6b61 0%, #06120C 60%)' },
   { id: 'whites', name: 'Test whites', bar: '#FAF5E9', art: 'linear-gradient(90deg, #FFFDF7 0 70%, #7A1F1F 70%)' },
   { id: 'tape', name: 'Tape ball', bar: '#0F0F10', art: 'repeating-linear-gradient(135deg, #FFD400 0 10px, #111111 10px 20px)' },
 ];
-const look = { theme: load('theme', 'pitch'), preview: load('premiumPreview', false) };
+const look = { theme: load('theme', 'pitch') };
 
 function applyTheme() {
   let t = THEMES.find((x) => x.id === look.theme) || THEMES[0];
-  if (!t.free && !look.preview) t = THEMES[0];
   if (t.id === 'pitch') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t.id;
   document.querySelector('meta[name="theme-color"]').content = t.bar;
-  $('#premiumPreview').checked = look.preview;
   $('#swatches').innerHTML = THEMES.map((x) => `
     <button class="swatch${x.id === t.id ? ' on' : ''}" data-theme-id="${x.id}" aria-pressed="${x.id === t.id}">
       <i style="background:${x.art}"></i><b>${x.name}</b>
-      <span class="tag${x.free ? ' free' : ''}">${x.free ? 'Free' : 'Premium'}</span>
     </button>`).join('');
   editor.draw();
 }
@@ -803,11 +849,7 @@ $('#themeBtn').addEventListener('click', () => {
 $('#swatches').addEventListener('click', (e) => {
   const b = e.target.closest('[data-theme-id]'); if (!b) return;
   const t = THEMES.find((x) => x.id === b.dataset.themeId);
-  if (!t.free && !look.preview) { toast('Premium theme. Tick "Preview premium themes" to try it.'); return; }
   look.theme = t.id; save('theme', t.id); applyTheme();
-});
-$('#premiumPreview').addEventListener('change', (e) => {
-  look.preview = e.target.checked; save('premiumPreview', look.preview); applyTheme();
 });
 
 // ---------- boot ----------
@@ -817,6 +859,8 @@ const dropSplash = () => splash.remove();
 splash.addEventListener('animationend', (e) => { if (e.target === splash) dropSplash(); });
 splash.addEventListener('click', () => splash.classList.add('skip'));
 setTimeout(dropSplash, 3200);
+
+auth.onUser(() => { if ($('#tab-settings').classList.contains('active')) renderSettings(); });
 
 loadGround(defaultGround());
 applyPrefs();
