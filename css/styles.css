@@ -75,3 +75,7 @@ label.check input { width: 20px; height: 20px; margin: 0; accent-color: var(--te
 .item { padding: 16px 0; border-bottom: 1px solid var(--line); }
 .item b { display: block; font-weight: 600; }
 #toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: var(--text); color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; z-index: 5; max-width: calc(100% - 32px); }
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th { text-align: left; font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.table td { padding: 10px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.table td:first-child { font-weight: 600; }

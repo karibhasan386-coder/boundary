@@ -1,11 +1,15 @@
 // Pure scoring engine. No DOM. A match is a list of ball events; everything else is derived.
 
+const names = (v) => [...new Set(String(v || '').split(/[\n,]/).map((x) => x.trim()).filter(Boolean))].slice(0, 15);
+const newInnings = () => ({ balls: [], striker: null, non: null, bowler: null });
+
 export function newMatch(cfg) {
   return {
     id: Date.now(),
     created: new Date().toISOString(),
     cfg: {
       teams: [cfg.teamA || 'Team A', cfg.teamB || 'Team B'],
+      players: [names(cfg.playersA), names(cfg.playersB)], // optional; empty = team scoring only
       overs: Math.max(1, cfg.overs | 0 || 5),
       wickets: Math.max(1, cfg.wickets | 0 || 10),
       ballType: cfg.ballType || 'tape',
@@ -14,7 +18,7 @@ export function newMatch(cfg) {
       noBallRuns: 1,
       reball: cfg.reball !== false, // local rule: are wides / no-balls bowled again?
     },
-    innings: [{ balls: [] }],
+    innings: [newInnings()],
     current: 0,
     done: false,
   };
@@ -53,11 +57,20 @@ export function addBall(match, ev) {
   const runs = ev.runs | 0;
   if (runs < 0 || runs > 7) throw new Error('Runs must be 0 to 7');
   if (ev.extra && !['wd', 'nb', 'b', 'lb'].includes(ev.extra)) throw new Error('Unknown extra');
-  match.innings[match.current].balls.push({
-    runs, extra: ev.extra || null, wicket: ev.wicket || null, t: Date.now(),
-  });
+  const inn = match.innings[match.current];
+  const pos = [inn.striker || null, inn.non || null, inn.bowler || null];
+  const ball = { runs, extra: ev.extra || null, wicket: ev.wicket || null, t: Date.now(), batter: pos[0], bowler: pos[2], pos };
+  const legalBefore = summarize(inn, match.cfg).legal;
+  inn.balls.push(ball);
+  // Who is on strike next: new batter needed after a wicket, swap on odd runs and at the end of the over.
+  if (ball.wicket) inn.striker = null;
+  if (runs % 2 === 1) [inn.striker, inn.non] = [inn.non || null, inn.striker || null];
+  if (isLegal(ball, match.cfg) && (legalBefore + 1) % 6 === 0) {
+    [inn.striker, inn.non] = [inn.non || null, inn.striker || null];
+    inn.bowler = null;
+  }
   if (inningsOver(match, match.current)) {
-    if (match.current === 0) { match.innings.push({ balls: [] }); match.current = 1; }
+    if (match.current === 0) { match.innings.push(newInnings()); match.current = 1; }
     else match.done = true;
   }
   return match;
@@ -68,7 +81,11 @@ export function undo(match) {
   if (!inn.balls.length && match.current === 1) {
     match.innings.pop(); match.current = 0; inn = match.innings[0];
   }
-  if (inn.balls.length) { inn.balls.pop(); match.done = false; }
+  if (inn.balls.length) {
+    const b = inn.balls.pop();
+    if (b.pos) [inn.striker, inn.non, inn.bowler] = b.pos;
+    match.done = false;
+  }
   return match;
 }
 
@@ -105,4 +122,42 @@ export function thisOver(inn, cfg) {
     if (isLegal(b, cfg)) legal++;
   }
   return out;
+}
+
+export const outBatters = (inn) => inn.balls.filter((b) => b.wicket && b.batter).map((b) => b.batter);
+
+// Career numbers per player name across every match stored on this phone.
+export function playerStats(matches) {
+  const P = {};
+  const get = (n) => (P[n] ||= { name: n, runs: 0, balls: 0, fours: 0, sixes: 0, outs: 0, bowled: 0, conceded: 0, wickets: 0, ids: new Set() });
+  for (const m of matches) for (const inn of m.innings) for (const b of inn.balls) {
+    if (b.batter) {
+      const p = get(b.batter); p.ids.add(m.id);
+      if (b.extra !== 'wd') p.balls++;
+      if (!b.extra || b.extra === 'nb') { p.runs += b.runs; if (b.runs === 4) p.fours++; if (b.runs === 6) p.sixes++; }
+      if (b.wicket) p.outs++;
+    }
+    if (b.bowler) {
+      const q = get(b.bowler); q.ids.add(m.id);
+      if (b.extra !== 'wd' && b.extra !== 'nb') q.bowled++;
+      if (b.extra !== 'b' && b.extra !== 'lb') q.conceded += ballRuns(b, m.cfg);
+      if (b.wicket && b.wicket !== 'Run out') q.wickets++;
+    }
+  }
+  return Object.values(P).map(({ ids, ...p }) => ({
+    ...p, matches: ids.size,
+    strikeRate: p.balls ? (p.runs * 100) / p.balls : 0,
+    economy: p.bowled ? (p.conceded * 6) / p.bowled : 0,
+  })).sort((a, b) => b.runs - a.runs || b.wickets - a.wickets);
+}
+
+export function scorecardText(match) {
+  const line = (i) => {
+    const s = summarize(match.innings[i], match.cfg);
+    return `${match.cfg.teams[i]} ${s.runs}/${s.wickets} (${s.overs} ov)`;
+  };
+  const out = [line(0)];
+  if (match.innings[1]) out.push(line(1));
+  out.push(result(match) || 'Match in progress', 'Scored with Boundary');
+  return out.join('\n');
 }

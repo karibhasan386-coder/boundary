@@ -29,6 +29,7 @@
       <button data-src="demo">Demo ball</button>
       <label class="btn">Video file<input type="file" id="fileSrc" accept="video/*" hidden></label>
     </div>
+    <p class="muted">Ask everyone playing before you record. Video stays on this phone unless you download a clip.</p>
     <label class="check"><input type="checkbox" id="trackOn" checked> Live ball tracking (experimental)</label>
     <div id="trackInfo" class="muted">Tracker idle.</div>
     <button id="appeal" class="big primary" disabled>Appeal · replay the last balls</button>
@@ -61,9 +62,18 @@
         </select>
       </label>
       <div id="verdict" class="verdict"></div>
+      <label>Camera position
+        <select id="camPos">
+          <option value="behind-bowler">Behind the bowler's stumps</option>
+          <option value="behind-batter">Behind the batter's stumps</option>
+          <option value="side-on">Side-on (square leg)</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
       <div class="row">
         <button id="saveReview" class="primary">Save decision</button>
         <a id="dlClip" class="btn">Download clip</a>
+        <button id="dlMeta">Download clip details</button>
         <button id="closeReview">Back to live</button>
       </div>
     </div>

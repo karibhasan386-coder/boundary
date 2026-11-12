@@ -106,4 +106,38 @@ test('ground: square field distances and area', () => {
   assert.equal(s.shortest, 50); assert.ok(Math.abs(s.longest - 70.71) < 0.01); assert.equal(s.area, 10000);
 });
 
+test('players: strike rotates on odd runs and at the end of the over', () => {
+  const m = S.newMatch({ overs: 2, playersA: 'Rafi\nImran, Sakib', playersB: 'Nayeem\nTuhin' });
+  assert.deepEqual(m.cfg.players[0], ['Rafi', 'Imran', 'Sakib']);
+  const inn = m.innings[0];
+  Object.assign(inn, { striker: 'Rafi', non: 'Imran', bowler: 'Nayeem' });
+  bowl(m, 1);
+  assert.equal(inn.striker, 'Imran');
+  bowl(m, 4, 0, 0, 0, 0);
+  assert.equal(inn.striker, 'Rafi'); assert.equal(inn.bowler, null);
+  S.undo(m);
+  assert.equal(inn.striker, 'Imran'); assert.equal(inn.bowler, 'Nayeem');
+});
+
+test('players: wicket needs a new batter; stats add up', () => {
+  const m = S.newMatch({ overs: 2, playersA: 'Rafi\nImran\nSakib', playersB: 'Nayeem' });
+  const inn = m.innings[0];
+  Object.assign(inn, { striker: 'Rafi', non: 'Imran', bowler: 'Nayeem' });
+  bowl(m, 4, 6, { runs: 0, extra: 'wd' }, { runs: 2, extra: 'lb' }, { runs: 0, wicket: 'Bowled' });
+  assert.equal(inn.striker, null);
+  assert.deepEqual(S.outBatters(inn), ['Rafi']);
+  const st = S.playerStats([m]);
+  const rafi = st.find((p) => p.name === 'Rafi'), nay = st.find((p) => p.name === 'Nayeem');
+  assert.equal(rafi.runs, 10); assert.equal(rafi.balls, 4); assert.equal(rafi.fours, 1); assert.equal(rafi.sixes, 1); assert.equal(rafi.outs, 1);
+  assert.equal(rafi.strikeRate, 250);
+  assert.equal(nay.wickets, 1); assert.equal(nay.bowled, 4); assert.equal(nay.conceded, 11);
+  assert.equal(nay.economy, 16.5);
+});
+
+test('scorecard text', () => {
+  const m = S.newMatch({ teamA: 'Lions', teamB: 'Tigers', overs: 1 });
+  bowl(m, 1, 1, 1, 1, 1, 1); bowl(m, 6, 1);
+  assert.equal(S.scorecardText(m), 'Lions 6/0 (1.0 ov)\nTigers 7/0 (0.2 ov)\nTigers won by 10 wickets\nScored with Boundary');
+});
+
 console.log(`\n${n} tests passed`);

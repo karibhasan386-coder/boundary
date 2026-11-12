@@ -46,7 +46,9 @@ function renderScore() {
       <h2>New match</h2>
       <form id="setup">
         <label>Batting first<input name="teamA" value="Team A" maxlength="30"></label>
+        <label>Their players, one per line (optional)<textarea name="playersA" rows="3" placeholder="Leave empty to score by team only"></textarea></label>
         <label>Batting second<input name="teamB" value="Team B" maxlength="30"></label>
+        <label>Their players, one per line (optional)<textarea name="playersB" rows="3"></textarea></label>
         <div class="grid2">
           <label>Overs<input name="overs" type="number" min="1" max="50" value="5"></label>
           <label>Wickets<input name="wickets" type="number" min="1" max="10" value="10"></label>
@@ -78,6 +80,14 @@ function renderScore() {
   }).join('');
   const wkTypes = ['Bowled', 'Caught', 'LBW', 'Run out', 'Stumped', 'Hit wicket', 'Other'];
 
+  const bat = cfg.players?.[i] || [], bowl = cfg.players?.[1 - i] || [], gone = S.outBatters(inn);
+  const pick = (pos, label, list, skip) => `<label>${label}<select data-pos="${pos}"><option value="">Choose</option>${
+    list.filter((p) => p === inn[pos] || !skip.includes(p)).map((p) => `<option${p === inn[pos] ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>`;
+  const players = `${bat.length ? `<div class="grid2">${pick('striker', 'On strike', bat, [...gone, inn.non])}${pick('non', 'Non-striker', bat, [...gone, inn.striker])}</div>` : ''}
+    ${bowl.length ? pick('bowler', 'Bowler', bowl, []) : ''}`;
+  const ground = db.grounds.find((g) => g.id === cfg.groundId);
+  const groundNote = ground ? `<p class="muted">Ground: ${esc(ground.name)}${ground.rules ? ` · agreed rules: ${esc(ground.rules)}` : ''}</p>` : '';
+
   scoreEl.innerHTML = `
     <div class="board">
       <div class="muted">${esc(cfg.teams[i])} batting · innings ${i + 1} of 2 · ${esc(cfg.ballType)} ball</div>
@@ -88,7 +98,9 @@ function renderScore() {
       ${m.done ? `<div class="result">${esc(S.result(m))}</div>` : ''}
     </div>
     <div class="over">${chips || '<span class="muted">No balls this over yet.</span>'}</div>
-    ${m.done ? '<button class="primary big" data-act="new">New match</button><button class="big" data-act="undo">Undo last ball</button>' : `
+    ${groundNote}
+    ${m.done ? '<button class="primary big" data-act="new">New match</button><button class="big" data-act="share">Share scorecard</button><button class="big" data-act="undo">Undo last ball</button>' : `
+      ${players}
       <div class="mods">
         ${[['wd', 'Wide'], ['nb', 'No-ball'], ['b', 'Bye'], ['lb', 'Leg bye']].map(([k, l]) =>
           `<button data-extra="${k}" class="${ui.extra === k ? 'on' : ''}">${l}</button>`).join('')}
@@ -119,7 +131,11 @@ scoreEl.addEventListener('click', (e) => {
   if (act !== 'end') ui.endArmed = false;
   if (extra) ui.extra = ui.extra === extra ? null : extra;
   else if (act === 'wicket') ui.wicket = !ui.wicket;
+  else if (act === 'share') { share(m); return; }
   else if (runs !== undefined) {
+    const inn = m.innings[m.current], i = m.current;
+    if (m.cfg.players?.[i]?.length && !inn.striker) { toast('Pick who is on strike first'); return; }
+    if (m.cfg.players?.[1 - i]?.length && !inn.bowler) { toast('Pick the bowler first'); return; }
     const wicket = ui.wicket ? ($('#wkType')?.value || 'Other') : null;
     S.addBall(m, { runs: +runs, extra: ui.extra, wicket });
     ui.extra = null; ui.wicket = false; persist();
@@ -133,6 +149,23 @@ scoreEl.addEventListener('click', (e) => {
   else return;
   renderScore();
 });
+
+scoreEl.addEventListener('change', (e) => {
+  const pos = e.target.dataset.pos, m = active();
+  if (!pos || !m) return;
+  m.innings[m.current][pos] = e.target.value || null;
+  persist(); renderScore();
+});
+
+async function share(m) {
+  const text = S.scorecardText(m);
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); toast('Scorecard copied'); }
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Could not share the scorecard');
+  }
+}
 
 // ---------- camera + tracking ----------
 const live = $('#live'), overlay = $('#overlay'), stage = $('#stage');
@@ -200,7 +233,25 @@ $('#trackOn').addEventListener('change', () => tracker.reset());
 
 // ---------- review ----------
 const replay = $('#replay');
-const rev = { urls: [], idx: 0, rate: 0.25, evidence: null, answers: {} };
+const rev = { urls: [], idx: 0, rate: 0.25, evidence: null, answers: {}, base: '', source: null };
+
+function download(name, blob) {
+  const a = document.createElement('a'), url = URL.createObjectURL(blob);
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Labelled details for a saved clip: this is what turns match footage into AI training data later.
+function clipDetails() {
+  const m = active(), d = currentVerdict(), ground = m && db.grounds.find((g) => g.id === m.cfg.groundId);
+  return {
+    clip: `${rev.base}.webm`, recorded: new Date().toISOString(),
+    ballType: m?.cfg.ballType ?? null, ground: ground?.name ?? null, surface: ground?.surface ?? null,
+    cameraPosition: $('#camPos').value, source: rev.source,
+    decisionType: $('#revType').value, verdict: d.verdict, answers: { ...rev.answers }, tracker: rev.evidence,
+    consent: 'Confirm every player in the clip agreed to be recorded before using it for training.',
+  };
+}
 
 async function appeal() {
   if (!cam.canReplay) { toast('Start a camera source first'); return; }
@@ -210,6 +261,8 @@ async function appeal() {
   closeReview();
   rev.urls = segs.map((b) => URL.createObjectURL(b));
   rev.evidence = evidence; rev.answers = {};
+  rev.base = `boundary-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  rev.source = { kind: cam.kind, width: live.videoWidth, height: live.videoHeight };
   $('#review').hidden = false;
   renderLbwForm(); syncReviewType();
   playSeg(0);
@@ -222,7 +275,7 @@ function playSeg(i) {
   replay.defaultPlaybackRate = rev.rate; replay.playbackRate = rev.rate;
   replay.play().catch(() => {});
   const a = $('#dlClip');
-  a.href = rev.urls[i]; a.download = `boundary-review-${Date.now()}.webm`;
+  a.href = rev.urls[i]; a.download = `${rev.base}.webm`;
 }
 replay.addEventListener('ended', () => { if (rev.urls.length) playSeg((rev.idx + 1) % rev.urls.length); });
 
@@ -283,6 +336,8 @@ $('#saveReview').addEventListener('click', () => {
   persist(); closeReview(); toast(`Saved: ${d.verdict}`);
 });
 $('#closeReview').addEventListener('click', closeReview);
+$('#dlMeta').addEventListener('click', () =>
+  download(`${rev.base}.json`, new Blob([JSON.stringify(clipDetails(), null, 2)], { type: 'application/json' })));
 $('#appeal').addEventListener('click', appeal);
 
 // ---------- ground ----------
@@ -342,8 +397,15 @@ function renderHistory() {
     <div class="item">
       <b>${line(m, 0)}${m.innings[1] ? ` · ${line(m, 1)}` : ''}</b>
       <span class="muted">${new Date(m.created).toLocaleString()} · ${esc(m.cfg.ballType)} ball · ${m.done ? esc(S.result(m)) : m.id === db.activeId ? 'in progress' : 'not finished'}</span>
-      ${!m.done && m.id !== db.activeId ? `<div class="row"><button data-resume="${m.id}">Resume</button></div>` : ''}
+      <div class="row">
+        ${!m.done && m.id !== db.activeId ? `<button data-resume="${m.id}">Resume</button>` : ''}
+        <button data-share="${m.id}">Share scorecard</button>
+      </div>
     </div>`).join('');
+  const stats = S.playerStats(db.matches);
+  const players = stats.length ? `<table class="table"><thead><tr><th>Player</th><th>Runs</th><th>SR</th><th>Wkts</th><th>Econ</th></tr></thead><tbody>${
+    stats.map((p) => `<tr><td>${esc(p.name)}</td><td>${p.runs}</td><td>${p.balls ? p.strikeRate.toFixed(0) : '-'}</td><td>${p.wickets}</td><td>${p.bowled ? p.economy.toFixed(1) : '-'}</td></tr>`).join('')
+  }</tbody></table>` : '<p class="muted">Add player names when you start a match to see batting and bowling numbers here.</p>';
   const reviews = [...db.reviews].reverse().map((r) => `
     <div class="item">
       <b>${esc(r.type.toUpperCase())}: ${esc(r.verdict)}</b>
@@ -352,11 +414,13 @@ function renderHistory() {
     </div>`).join('');
   historyEl.innerHTML = `
     <h2>Matches</h2>${matches || '<p class="muted">No matches yet. Start one on the Score tab.</p>'}
-    <h2>Reviews</h2>${reviews || '<p class="muted">No reviews yet. Tap APPEAL on the Camera tab during a match.</p>'}`;
+    <h2>Players</h2>${players}
+    <h2>Reviews</h2>${reviews || '<p class="muted">No reviews yet. Tap Appeal on the Camera tab during a match.</p>'}`;
 }
 historyEl.addEventListener('click', (e) => {
-  const id = e.target.dataset.resume;
-  if (id) { db.activeId = +id; persist(); show('score'); }
+  const { resume, share: shareId } = e.target.dataset;
+  if (resume) { db.activeId = +resume; persist(); show('score'); }
+  if (shareId) { const m = db.matches.find((x) => x.id === +shareId); if (m) share(m); }
 });
 
 // ---------- boot ----------
