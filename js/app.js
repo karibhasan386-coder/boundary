@@ -715,9 +715,9 @@ const SETTINGS = [
     { label: 'Delete all data', note: 'Removes every match, ground and review from this phone. This cannot be undone.', action: ['wipe', 'Delete'], danger: true },
   ]],
   ['About', [
-    { label: 'Version', info: () => '0.4 (test build)' },
+    { label: 'Version', info: () => '0.5 (test build)' },
     { label: 'What the AI can and cannot do', info: () => 'Decisions come from the replay and your answers. Ball tracking is experimental and is not an umpire.' },
-    { label: 'Privacy', info: () => 'Scores and video stay on this phone unless you download or share them. Signing in is optional.' },
+    { label: 'Privacy', info: () => 'Scores and video stay on this phone unless you download or share them. Signing in is optional.', action: ['privacy', 'Read policy'] },
   ]],
 ];
 
@@ -759,6 +759,7 @@ $('#setList').addEventListener('change', (e) => {
 $('#setList').addEventListener('click', (e) => {
   const act = e.target.closest('[data-do]')?.dataset.do; if (!act) return;
   if (act === 'board') { openBoard(); return; }
+  if (act === 'privacy') { location.href = 'privacy.html'; return; }
   if (act === 'signin') {
     if (!auth.configured) { toast('Sign-in is not switched on yet'); return; }
     auth.signIn().catch((err) => toast(err.code === 'auth/popup-closed-by-user' ? 'Sign-in was cancelled' : `Could not sign in (${err.code || err.message})`));
