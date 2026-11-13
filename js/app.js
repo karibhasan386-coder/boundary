@@ -25,7 +25,7 @@ const active = () => db.matches.find((m) => m.id === db.activeId) || null;
 const ui = { extra: null, wicket: false, endArmed: false, toss: 0, heard: null, armed: null };
 
 // Personal preferences. They set defaults for the next match; they never change a match in progress.
-const PREF_DEFAULTS = { ball: 'tape', overs: 5, wickets: 10, reball: true, quality: 'balanced', replaySec: 6, trackDefault: false, voiceLang: 'en-IN', textSize: 'normal', bigButtons: false, reduceMotion: false };
+const PREF_DEFAULTS = { bpo: 6, wideRuns: 1, noBallRuns: 1, keepAwake: true, haptics: true, ball: 'tape', overs: 5, wickets: 10, reball: true, quality: 'balanced', replaySec: 6, trackDefault: false, voiceLang: 'en-IN', textSize: 'normal', bigButtons: false, reduceMotion: false };
 const prefs = { ...PREF_DEFAULTS, ...load('prefs', {}) };
 const QUALITY = { saver: { width: 640, height: 360, fps: 30 }, balanced: { width: 1280, height: 720, fps: 30 }, max: { width: 1920, height: 1080, fps: 60 } };
 
@@ -48,9 +48,23 @@ function show(tab) {
 $('nav').addEventListener('click', (e) => { if (e.target.dataset.tab) show(e.target.dataset.tab); });
 
 // ---------- score ----------
+// Keep the screen on while a match is being scored, so the phone does not lock between balls.
+let wake = null;
+async function syncWake() {
+  try {
+    const m = active(), want = prefs.keepAwake && m && !m.done && document.visibilityState === 'visible';
+    if (want && !wake && navigator.wakeLock) {
+      wake = await navigator.wakeLock.request('screen');
+      wake.addEventListener('release', () => { wake = null; });
+    } else if (!want && wake) { await wake.release(); wake = null; }
+  } catch { wake = null; }
+}
+document.addEventListener('visibilitychange', syncWake);
+
 const scoreEl = $('#tab-score');
 
 function renderScore() {
+  syncWake();
   const m = active();
   if (!m) {
     scoreEl.innerHTML = `
@@ -76,20 +90,29 @@ function renderScore() {
           ${db.grounds.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}
         </select></label>
         <label class="check"><input type="checkbox" name="reball" checked> Wides and no-balls are bowled again</label>
+        <details class="more">
+          <summary>More rules</summary>
+          <div class="grid2">
+            <label>Balls per over<select name="bpo"><option>4</option><option>5</option><option selected>6</option><option>8</option></select></label>
+            <label>A wide is worth<select name="wideRuns"><option value="0">0 runs</option><option value="1" selected>1 run</option><option value="2">2 runs</option></select></label>
+          </div>
+          <label>A no-ball is worth<select name="noBallRuns"><option value="0">0 runs</option><option value="1" selected>1 run</option><option value="2">2 runs</option></select></label>
+        </details>
         <div class="stats" id="tossBox"><button type="button" data-act="toss">Toss the coin</button><div id="tossOut"></div></div>
         <button class="primary big">Start match</button>
       </form>`;
     const f = $('#setup');
     f.overs.value = prefs.overs; f.wickets.value = prefs.wickets; f.ballType.value = prefs.ball; f.reball.checked = prefs.reball;
+    f.bpo.value = prefs.bpo; f.wideRuns.value = prefs.wideRuns; f.noBallRuns.value = prefs.noBallRuns;
     return;
   }
   const { cfg } = m, i = m.current, inn = m.innings[i], s = S.summarize(inn, cfg);
-  const rr = s.legal ? ((s.runs * 6) / s.legal).toFixed(2) : '0.00';
+  const rr = s.legal ? ((s.runs * S.bpo(cfg)) / s.legal).toFixed(2) : '0.00';
   const tgt = S.target(m);
   let chase = '';
   if (i === 0 && m.innings.length === 1) chase = '';
   if (tgt && !m.done) {
-    const need = tgt - s.runs, left = cfg.overs * 6 - s.legal;
+    const need = tgt - s.runs, left = cfg.overs * S.bpo(cfg) - s.legal;
     chase = `<div class="chase">Need ${need} from ${left} ball${left === 1 ? '' : 's'} · target ${tgt}</div>`;
   }
   const first = i === 1 ? S.summarize(m.innings[0], cfg) : null;
@@ -118,7 +141,7 @@ function renderScore() {
     </div>
     <div class="over">${chips || '<span class="muted">No balls this over yet.</span>'}</div>
     ${groundNote}
-    ${m.done ? '<button class="primary big" data-act="new">New match</button><button class="big" data-act="share">Share scorecard</button><button class="big" data-act="undo">Undo last ball</button>' : `
+    ${m.done ? '<button class="primary big" data-act="new">New match</button><button class="big" data-act="card">Full scorecard</button><button class="big" data-act="share">Share scorecard</button><button class="big" data-act="undo">Undo last ball</button>' : `
       ${players}
       ${ui.heard ? `<div class="stats heard">Heard "${esc(ui.heard.text)}". Score <b>${esc(describe(ui.heard.ev))}</b>?
         <div class="row"><button class="primary" data-act="voiceYes">Confirm</button><button data-act="voiceNo">Cancel</button></div></div>` : ''}
@@ -128,6 +151,7 @@ function renderScore() {
         <button data-act="wicket" class="${ui.wicket ? 'on' : ''}">Wicket</button>
       </div>
       ${ui.wicket ? `<label>How out<select id="wkType">${wkTypes.map((w) => `<option>${w}</option>`).join('')}</select></label>` : ''}
+      ${ui.wicket && inn.striker && inn.non ? `<label>Who is out (matters for a run-out)<select id="wkWho"><option value="striker">${esc(inn.striker)}, on strike</option><option value="non">${esc(inn.non)}, non-striker</option></select></label>` : ''}
       <p class="muted">${ui.extra || ui.wicket ? 'Now tap the runs for this ball.' : 'Tap the runs scored. Tap Wide / No-ball / Wicket first if needed.'}</p>
       <div class="runs">${[0, 1, 2, 3, 4, 6].map((n) => `<button data-runs="${n}">${n}</button>`).join('')}</div>
       <div class="row actions">
@@ -154,12 +178,13 @@ scoreEl.addEventListener('click', (e) => {
   if (extra) ui.extra = ui.extra === extra ? null : extra;
   else if (act === 'wicket') ui.wicket = !ui.wicket;
   else if (act === 'share') { share(m); return; }
+  else if (act === 'card') { ui.cardId = m.id; show('history'); return; }
   else if (act === 'voice') { startVoice(); return; }
   else if (act === 'voiceNo') ui.heard = null;
   else if (act === 'voiceYes') { const ev = ui.heard.ev; ui.heard = null; if (!commitBall(m, ev)) return; }
   else if (runs !== undefined) {
     const wicket = ui.wicket ? ($('#wkType')?.value || 'Other') : null;
-    if (!commitBall(m, { runs: +runs, extra: ui.extra, wicket })) return;
+    if (!commitBall(m, { runs: +runs, extra: ui.extra, wicket, out: wicket ? $('#wkWho')?.value : null })) return;
   } else if (act === 'undo') { S.undo(m); persist(); }
   else if (act === 'new') { db.activeId = null; persist(); }
   else if (act === 'end') {
@@ -175,6 +200,7 @@ function commitBall(m, ev) {
   if (m.cfg.players?.[i]?.length && !inn.striker) { toast('Pick who is on strike first'); return false; }
   if (m.cfg.players?.[1 - i]?.length && !inn.bowler) { toast('Pick the bowler first'); return false; }
   S.addBall(m, ev);
+  if (prefs.haptics) navigator.vibrate?.(ev.wicket ? [70, 50, 70] : ev.runs === 4 || ev.runs === 6 ? 45 : 15);
   ui.extra = null; ui.wicket = false; persist();
   if (m.done) toast(S.result(m));
   else if (m.current === 1 && !m.innings[1].balls.length) toast(`Innings over. ${m.cfg.teams[1]} need ${S.target(m)}`);
@@ -645,6 +671,31 @@ $('#gSave').addEventListener('click', () => {
 // ---------- history ----------
 const historyEl = $('#tab-history');
 
+function cardHtml(m) {
+  const pom = S.playerOfMatch(m);
+  const innings = m.innings.map((_, i) => {
+    const c = S.scorecard(m, i);
+    const batting = c.batting.length ? `<div class="scroll"><table class="table small"><thead><tr><th>Batter</th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr></thead><tbody>${
+      c.batting.map((p) => `<tr><td>${esc(p.name)}<small>${esc(p.how)}</small></td><td>${p.runs}</td><td>${p.balls}</td><td>${p.fours}</td><td>${p.sixes}</td><td>${p.balls ? p.strikeRate.toFixed(0) : '-'}</td></tr>`).join('')
+    }</tbody></table></div>` : '';
+    const bowling = c.bowling.length ? `<div class="scroll"><table class="table small"><thead><tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th></tr></thead><tbody>${
+      c.bowling.map((p) => `<tr><td>${esc(p.name)}</td><td>${p.overs}</td><td>${p.maidens}</td><td>${p.runs}</td><td>${p.wickets}</td><td>${p.balls ? p.economy.toFixed(1) : '-'}</td></tr>`).join('')
+    }</tbody></table></div>` : '';
+    const fow = c.fow.length ? `<p class="muted"><b>Fall of wickets:</b> ${c.fow.map((f) => `${f.score}-${f.wicket}${f.name ? ` (${esc(f.name)}, ${f.over})` : ` (${f.over})`}`).join(', ')}</p>` : '';
+    const parts = c.partnerships.length ? `<p class="muted"><b>Partnerships:</b> ${c.partnerships.map((p) => `${p.runs}${p.unbroken ? '*' : ''} (${p.balls} balls)`).join(', ')}</p>` : '';
+    return `<h3>${esc(c.team)} ${c.total.runs}/${c.total.wickets} <small>(${c.total.overs} overs)</small></h3>
+      ${batting}
+      <p class="muted"><b>Extras ${c.extras.total}:</b> wides ${c.extras.wd}, no-balls ${c.extras.nb}, byes ${c.extras.b}, leg byes ${c.extras.lb}</p>
+      ${bowling}${fow}${parts}
+      ${c.batting.length || c.bowling.length ? '' : '<p class="muted">Add player names when you start a match to get batting and bowling cards.</p>'}`;
+  }).join('');
+  return `<div class="card">
+    ${pom ? `<p><span class="tag">Player of the match</span> <b>${esc(pom.name)}</b> · ${pom.runs} runs, ${pom.wickets} wicket${pom.wickets === 1 ? '' : 's'}</p>` : ''}
+    ${innings}
+    <div class="row"><button data-csv="${m.id}">Download as spreadsheet</button><button data-card="${m.id}">Close scorecard</button></div>
+  </div>`;
+}
+
 function renderHistory() {
   const line = (m, i) => {
     const s = S.summarize(m.innings[i], m.cfg);
@@ -656,8 +707,11 @@ function renderHistory() {
       <span class="muted">${new Date(m.created).toLocaleString()} · ${esc(m.cfg.ballType)} ball · ${m.done ? esc(S.result(m)) : m.id === db.activeId ? 'in progress' : 'not finished'}</span>
       <div class="row">
         ${!m.done && m.id !== db.activeId ? `<button data-resume="${m.id}">Resume</button>` : ''}
-        <button data-share="${m.id}">Share scorecard</button>
+        <button data-card="${m.id}">${ui.cardId === m.id ? 'Hide scorecard' : 'Scorecard'}</button>
+        <button data-share="${m.id}">Share</button>
+        ${m.id === db.activeId ? '' : `<button data-del="${m.id}" class="danger">${ui.armed === `del${m.id}` ? 'Tap again' : 'Delete'}</button>`}
       </div>
+      ${ui.cardId === m.id ? cardHtml(m) : ''}
     </div>`).join('');
   const stats = S.playerStats(db.matches);
   const players = stats.length ? `<table class="table"><thead><tr><th>Player</th><th>Runs</th><th>SR</th><th>Wkts</th><th>Econ</th></tr></thead><tbody>${
@@ -675,9 +729,19 @@ function renderHistory() {
     <h2>Reviews</h2>${reviews || '<p class="muted">No reviews yet. Tap Appeal on the Camera tab during a match.</p>'}`;
 }
 historyEl.addEventListener('click', (e) => {
-  const { resume, share: shareId } = e.target.dataset;
+  const { resume, share: shareId, card, csv, del } = e.target.dataset;
+  const find = (id) => db.matches.find((x) => x.id === +id);
   if (resume) { db.activeId = +resume; persist(); show('score'); }
-  if (shareId) { const m = db.matches.find((x) => x.id === +shareId); if (m) share(m); }
+  else if (shareId) { const m = find(shareId); if (m) share(m); }
+  else if (card) { ui.cardId = ui.cardId === +card ? null : +card; renderHistory(); }
+  else if (csv) { const m = find(csv); if (m) download(`boundary-${m.cfg.teams.join('-v-').replace(/[^\w-]+/g, '_')}.csv`, new Blob([S.scorecardCsv(m)], { type: 'text/csv' })); }
+  else if (del) {
+    const key = `del${del}`;
+    if (ui.armed !== key) { ui.armed = key; renderHistory(); setTimeout(() => { if (ui.armed === key) { ui.armed = null; renderHistory(); } }, 4000); return; }
+    ui.armed = null; db.matches = db.matches.filter((x) => x.id !== +del);
+    if (ui.cardId === +del) ui.cardId = null;
+    persist(); renderHistory(); toast('Match deleted');
+  }
 });
 
 // ---------- settings ----------
@@ -691,6 +755,13 @@ const SETTINGS = [
     { k: 'overs', label: 'Default overs', num: [1, 50] },
     { k: 'wickets', label: 'Default wickets', num: [1, 10] },
     { k: 'reball', label: 'Wides and no-balls are bowled again', bool: true },
+    { k: 'bpo', label: 'Balls per over', opts: [[4, '4 balls'], [5, '5 balls'], [6, '6 balls'], [8, '8 balls']] },
+    { k: 'wideRuns', label: 'A wide is worth', opts: [[0, '0 runs'], [1, '1 run'], [2, '2 runs']] },
+    { k: 'noBallRuns', label: 'A no-ball is worth', opts: [[0, '0 runs'], [1, '1 run'], [2, '2 runs']] },
+  ]],
+  ['Match day', [
+    { k: 'keepAwake', label: 'Keep the screen on while scoring', note: 'Stops the phone locking between balls. Uses more battery.', bool: true },
+    { k: 'haptics', label: 'Vibrate when a ball is scored', note: 'A short buzz for each ball, longer for a boundary or a wicket.', bool: true },
   ]],
   ['Camera and replay', [
     { k: 'quality', label: 'Video quality', note: 'The phone uses the nearest size it supports.', opts: [['saver', 'Data saver (360p)'], ['balanced', 'Balanced (720p)'], ['max', 'Maximum (1080p, 60 fps)']] },
@@ -715,7 +786,7 @@ const SETTINGS = [
     { label: 'Delete all data', note: 'Removes every match, ground and review from this phone. This cannot be undone.', action: ['wipe', 'Delete'], danger: true },
   ]],
   ['About', [
-    { label: 'Version', info: () => '0.5 (test build)' },
+    { label: 'Version', info: () => '0.6 (test build)' },
     { label: 'What the AI can and cannot do', info: () => 'Decisions come from the replay and your answers. Ball tracking is experimental and is not an umpire.' },
     { label: 'Privacy', info: () => 'Scores and video stay on this phone unless you download or share them. Signing in is optional.', action: ['privacy', 'Read policy'] },
   ]],
@@ -799,7 +870,7 @@ function renderBoard() {
   const m = matches.find((x) => x.id === id) || matches[matches.length - 1];
   if (!m) { $('#boardBody').innerHTML = '<div class="bd-overs">Waiting for a match to start</div>'; return; }
   const i = m.current, s = S.summarize(m.innings[i], m.cfg), tgt = S.target(m);
-  const left = m.cfg.overs * 6 - s.legal;
+  const left = m.cfg.overs * S.bpo(m.cfg) - s.legal;
   const chips = S.thisOver(m.innings[i], m.cfg).map((l) => `<span class="chip ${l.startsWith('W') ? 'w' : l === '4' ? 'b4' : l === '6' ? 'b6' : ''}">${esc(l)}</span>`).join('');
   $('#boardBody').innerHTML = `
     <div class="bd-team">${esc(m.cfg.teams[i])}</div>

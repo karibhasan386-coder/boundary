@@ -367,3 +367,15 @@ nav button { font-size: 13px; }
 :root[data-theme="night"] { --card: rgba(255, 255, 255, 0.12); --blob-alpha: 0.4; }
 .shapes i { filter: blur(6px); }
 :root:is([data-theme="pitchglass"], [data-theme="glass"], [data-theme="night"]) { --frost: blur(20px) saturate(170%); }
+
+/* ---------- Scorecard ---------- */
+.card { margin-top: 12px; padding: 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.card h3 { margin: 18px 0 6px; font: 400 22px/1.2 var(--serif); }
+.card h3:first-of-type { margin-top: 4px; }
+.card h3 small { font: 13px var(--sans); color: var(--muted); }
+.scroll { overflow-x: auto; }
+.table.small { font-size: 13px; }
+.table.small td small { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+.table.small th:not(:first-child), .table.small td:not(:first-child) { text-align: right; }
+details.more { margin: 12px 0; }
+details.more summary { cursor: pointer; padding: 10px 0; color: var(--muted); font-size: 14px; }

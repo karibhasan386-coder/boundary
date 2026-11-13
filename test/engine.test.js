@@ -205,6 +205,56 @@ test('decision picture: the ball passes through the marked points', () => {
   assert.equal(ballAt(ft, 1).phase, 'stopped');                     // full toss: no projection
 });
 
+test('rules: five-ball overs and wides worth nothing', () => {
+  const m = S.newMatch({ overs: 1, bpo: 5, wideRuns: 0 });
+  bowl(m, { runs: 0, extra: 'wd' }, 1, 1, 1, 1);
+  assert.equal(S.summarize(m.innings[0], m.cfg).runs, 4);
+  assert.equal(S.summarize(m.innings[0], m.cfg).overs, '0.4');
+  bowl(m, 1);
+  assert.equal(m.current, 1);                       // one five-ball over is the whole innings
+  assert.equal(S.newMatch({ bpo: 7 }).cfg.bpo, 6);   // nonsense values fall back to six
+});
+
+test('run-out: the non-striker can be the one out', () => {
+  const m = S.newMatch({ overs: 2, playersA: 'Rafi\nImran\nSakib', playersB: 'Nayeem' });
+  const inn = m.innings[0];
+  Object.assign(inn, { striker: 'Rafi', non: 'Imran', bowler: 'Nayeem' });
+  bowl(m, { runs: 0, wicket: 'Run out', out: 'non' });
+  assert.equal(inn.striker, 'Rafi'); assert.equal(inn.non, null);
+  assert.deepEqual(S.outBatters(inn), ['Imran']);
+  const st = S.playerStats([m]);
+  assert.equal(st.find((p) => p.name === 'Imran').outs, 1);
+  assert.equal(st.find((p) => p.name === 'Rafi').outs, 0);
+  assert.equal(st.find((p) => p.name === 'Nayeem').wickets, 0); // a run-out is not the bowler's wicket
+  S.undo(m);
+  assert.equal(inn.non, 'Imran');
+});
+
+test('scorecard: batting, bowling, extras, fall of wickets, partnerships', () => {
+  const m = S.newMatch({ teamA: 'Lions', teamB: 'Tigers', overs: 2, playersA: 'Rafi\nImran\nSakib', playersB: 'Nayeem\nTuhin' });
+  const inn = m.innings[0];
+  Object.assign(inn, { striker: 'Rafi', non: 'Imran', bowler: 'Nayeem' });
+  bowl(m, 0, 0, 0, 0, 0, 0);                         // maiden to Rafi
+  Object.assign(inn, { bowler: 'Tuhin' });           // Imran now on strike
+  bowl(m, 4, { runs: 0, extra: 'wd' }, { runs: 2, extra: 'lb' }, { runs: 0, wicket: 'Bowled' });
+  const c = S.scorecard(m, 0);
+  assert.equal(c.team, 'Lions');
+  const rafi = c.batting.find((p) => p.name === 'Rafi'), imran = c.batting.find((p) => p.name === 'Imran');
+  assert.deepEqual([rafi.runs, rafi.balls, rafi.how], [0, 6, 'not out']);
+  assert.deepEqual([imran.runs, imran.balls, imran.fours, imran.how], [4, 3, 1, 'b Tuhin']);
+  const nay = c.bowling.find((p) => p.name === 'Nayeem'), tuh = c.bowling.find((p) => p.name === 'Tuhin');
+  assert.deepEqual([nay.overs, nay.maidens, nay.runs, nay.wickets], ['1.0', 1, 0, 0]);
+  assert.deepEqual([tuh.overs, tuh.maidens, tuh.runs, tuh.wickets], ['0.3', 0, 5, 1]);
+  assert.deepEqual(c.extras, { wd: 1, nb: 0, b: 0, lb: 2, total: 3 });
+  assert.deepEqual(c.fow, [{ wicket: 1, score: 7, name: 'Imran', over: '1.3' }]);
+  assert.deepEqual(c.partnerships, [{ wicket: 1, runs: 7, balls: 9, unbroken: false }]);
+  assert.equal(S.playerOfMatch(m).name, 'Tuhin');    // one wicket (20) beats four runs
+  const csv = S.scorecardCsv(m);
+  assert.ok(csv.startsWith('"Match","Lions v Tigers"'));
+  assert.ok(csv.includes('"Imran","b Tuhin","4","3","1","0"'));
+  assert.equal(S.playerOfMatch(S.newMatch({})), null);
+});
+
 test('ground: square field distances and area', () => {
   const sq = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
   const s = measure(sq, 100);
