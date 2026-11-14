@@ -43,7 +43,9 @@ export function initForm({ toast, load, save }) {
       }
       video.muted = true;
       await video.play();
-      if (video.videoWidth) stage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+      // Some files (old .ogv clips, some phone formats) load but show no picture in this browser.
+      if (!video.videoWidth) throw new Error('This browser cannot show that video. Film it with the phone camera here, or use an MP4 or WebM file.');
+      stage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
       st.kind = kind; msg('');
       $('#fmCheck').disabled = false; $('#fmTimer').disabled = kind !== 'camera'; $('#fmCtl').hidden = kind !== 'file';
       st.loop = true; tick();
@@ -108,14 +110,23 @@ export function initForm({ toast, load, save }) {
     return ref.map((p) => ({ x: ch.x + (p.x - rh.x) * k, y: ch.y + (p.y - rh.y) * k, visibility: p.visibility }));
   }
 
+  const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
   async function check() {
     if (!st.kind) return;
     if (st.kind === 'file') video.pause();
-    await analyse();
-    if (!st.lm) { toast('No player found in the picture. Get the whole body in view.'); return; }
+    // Wait for the frame to be on screen and for any analysis already running, so we judge this frame and not the last one.
+    for (let i = 0; i < 60 && (video.seeking || video.readyState < 2 || st.busy); i++) await sleep(50);
+    st.busy = true;
+    try { st.lm = await detect(video); } catch { st.lm = null; }
+    st.busy = false;
+    if (!st.lm) { clearReport(); draw(); toast('No player found in the picture. Get the whole body in view.'); return; }
     st.frozen = st.lm.map((p) => ({ x: p.x, y: p.y, visibility: p.visibility }));
     report();
   }
+
+  // The written report always belongs to one frozen frame. Leaving that frame removes it.
+  function clearReport() { st.frozen = null; $('#fmOut').innerHTML = ''; }
 
   function report() {
     const m = metrics(st.frozen, hand(), aspect()), list = checks(sport(), m), good = list.filter((c) => c.ok).length, ref = st.refs[sport()];
@@ -138,10 +149,10 @@ export function initForm({ toast, load, save }) {
   $('#tab-form').addEventListener('click', (e) => {
     const act = e.target.closest('[data-fm]')?.dataset.fm; if (!act) return;
     if (act === 'camera') start('camera');
-    else if (act === 'play') { if (video.paused) { st.frozen = null; video.play().catch(() => {}); } else video.pause(); }
+    else if (act === 'play') { if (video.paused) { clearReport(); video.play().catch(() => {}); } else video.pause(); }
     else if (act === 'slow') { video.playbackRate = video.playbackRate === 1 ? 0.25 : 1; toast(video.playbackRate === 1 ? 'Normal speed' : 'Quarter speed'); }
-    else if (act === 'back' || act === 'fwd') { video.pause(); st.frozen = null; video.currentTime = Math.max(0, video.currentTime + (act === 'fwd' ? 1 : -1) / 30); }
-    else if (act === 'resume') { st.frozen = null; $('#fmOut').innerHTML = ''; if (st.kind === 'file') video.play().catch(() => {}); draw(); }
+    else if (act === 'back' || act === 'fwd') { video.pause(); clearReport(); video.currentTime = Math.max(0, video.currentTime + (act === 'fwd' ? 1 : -1) / 30); }
+    else if (act === 'resume') { clearReport(); if (st.kind === 'file') video.play().catch(() => {}); draw(); }
     else if (act === 'saveRef') {
       st.refs[sport()] = { lm: st.frozen, m: metrics(st.frozen, hand(), aspect()), hand: hand(), saved: new Date().toISOString() };
       save('formRefs', st.refs); toast('Saved as your reference'); report();

@@ -66,6 +66,7 @@ export class Camera {
     }
     v.muted = true;
     await v.play();
+    if (kind === 'file' && !v.videoWidth) throw new Error('This browser cannot show that video. Use an MP4 or WebM file, or the phone camera.');
     if (kind === 'file') this.stream = v.captureStream ? v.captureStream() : null;
     this.kind = kind;
     if (this.stream && pickMime() !== null) this._startSeg();

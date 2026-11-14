@@ -28,7 +28,7 @@ export function solve(marks, opts = {}) {
   const bl = sq(marks.bl), br = sq(marks.br), bt = sq(marks.bt), ol = sq(marks.ol), or = sq(marks.or), impact = sq(marks.impact);
 
   const V = meet(ol, bl, or, br);
-  if (!V) return { error: 'The stump marks are parallel. Mark the stumps again.' };
+  if (!V) return { error: 'These marks look like a side-on view. Ball tracking needs the camera behind the stumps, looking down the pitch. If it is, mark the stumps again.' };
   const yb = (bl.y + br.y) / 2, yo = (ol.y + or.y) / 2;
   if ((yb - V.y) * (yo - V.y) <= 0 || Math.abs(yb - yo) < 0.02) return { error: 'The two wickets look like they are in the same place. Mark the stumps again.' };
 

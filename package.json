@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/engine.test.js",
+    "test": "node test/engine.test.js && node test/audit.js",
     "start": "python -m http.server 5173"
   }
 }

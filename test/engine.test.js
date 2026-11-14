@@ -312,6 +312,27 @@ test('form: comparing with a saved reference', () => {
   assert.ok(diff[0].startsWith('Your front knee is') && diff[0].includes('straighter'));
 });
 
+test('all out: a three-player side is out after two wickets, not ten', () => {
+  const m = S.newMatch({ overs: 5, wickets: 10, playersA: 'Rafi\nImran\nSakib', playersB: 'Nayeem' });
+  const inn = m.innings[0];
+  Object.assign(inn, { striker: 'Rafi', non: 'Imran', bowler: 'Nayeem' });
+  bowl(m, { runs: 0, wicket: 'Bowled' });
+  assert.equal(m.current, 0);
+  inn.striker = 'Sakib';
+  bowl(m, { runs: 0, wicket: 'Bowled' });
+  assert.equal(m.current, 1);                       // nobody left to bat
+  bowl(m, 1);                                       // the one-player side wins with its only wicket in hand
+  assert.equal(S.result(m), 'Team B won by 10 wickets');   // one named player is not a squad: the setting applies
+  const pair = S.newMatch({ teamA: 'Lions', teamB: 'Tigers', overs: 1, playersB: 'Nayeem\nTuhin' });
+  bowl(pair, 0, 0, 0, 0, 0, 0);
+  Object.assign(pair.innings[1], { striker: 'Nayeem', non: 'Tuhin' });
+  bowl(pair, 1);
+  assert.equal(S.result(pair), 'Tigers won by 1 wicket');  // a two-player side only ever has one wicket to lose
+  const t = S.newMatch({ overs: 5, wickets: 2 });   // no names: the wicket setting decides
+  bowl(t, { runs: 0, wicket: 'Bowled' }, { runs: 0, wicket: 'Bowled' });
+  assert.equal(t.current, 1);
+});
+
 test('ground: square field distances and area', () => {
   const sq = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
   const s = measure(sq, 100);

@@ -11,6 +11,7 @@ import * as auth from './auth.js';
 import { initForm } from './formview.js';
 
 const $ = (s) => document.querySelector(s);
+const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const db = {
@@ -320,6 +321,7 @@ async function startSource(kind, file) {
     if (!cam.canReplay) toast('Replay is not supported in this browser');
     if (!looping) { looping = true; schedule(); }
   } catch (err) {
+    cam.stop(); // do not leave a half-started source playing behind the error message
     $('#appeal').disabled = true;
     camMsg(err.name === 'NotAllowedError' ? 'Camera permission was denied. Allow the camera in the browser, then tap Phone camera again.'
       : err.name === 'NotFoundError' ? 'No camera found on this device. Try Demo ball or Video file.'
@@ -692,7 +694,7 @@ function cardHtml(m) {
       ${c.batting.length || c.bowling.length ? '' : '<p class="muted">Add player names when you start a match to get batting and bowling cards.</p>'}`;
   }).join('');
   return `<div class="card">
-    ${pom ? `<p><span class="tag">Player of the match</span> <b>${esc(pom.name)}</b> · ${pom.runs} runs, ${pom.wickets} wicket${pom.wickets === 1 ? '' : 's'}</p>` : ''}
+    ${pom ? `<p><span class="tag">Player of the match</span> <b>${esc(pom.name)}</b> · ${count(pom.runs, 'run')}, ${count(pom.wickets, 'wicket')}</p>` : ''}
     ${innings}
     <div class="row"><button data-csv="${m.id}">Download as spreadsheet</button><button data-card="${m.id}">Close scorecard</button></div>
   </div>`;
@@ -782,7 +784,7 @@ const SETTINGS = [
     { label: 'Big-screen scoreboard', note: 'Shows the live score full screen. For a second screen, open the app in another window on this device and add #scoreboard to the address.', action: ['board', 'Open'] },
   ]],
   ['Data on this phone', [
-    { label: 'Storage used', info: () => `${(Object.keys(localStorage).filter((k) => k.startsWith('boundary.')).reduce((n, k) => n + localStorage.getItem(k).length, 0) / 1024).toFixed(1)} KB · ${db.matches.length} matches · ${db.grounds.length} grounds · ${db.reviews.length} reviews` },
+    { label: 'Storage used', info: () => `${(Object.keys(localStorage).filter((k) => k.startsWith('boundary.')).reduce((n, k) => n + localStorage.getItem(k).length, 0) / 1024).toFixed(1)} KB · ${count(db.matches.length, 'match', 'matches')} · ${count(db.grounds.length, 'ground')} · ${count(db.reviews.length, 'review')}` },
     { label: 'Back up everything', note: 'Saves matches, grounds, reviews and settings to a file.', action: ['export', 'Download'] },
     { label: 'Restore from a backup', note: 'Replaces everything on this phone with the backup.', action: ['import', 'Choose file'] },
     { label: 'Delete all data', note: 'Removes every match, ground and review from this phone. This cannot be undone.', action: ['wipe', 'Delete'], danger: true },
@@ -861,7 +863,7 @@ $('#importFile').addEventListener('change', async (e) => {
     if (d.app !== 'boundary' || !Array.isArray(d.matches) || !Array.isArray(d.grounds) || !Array.isArray(d.reviews)) throw new Error('not a backup');
     Object.assign(db, { matches: d.matches, grounds: d.grounds, reviews: d.reviews, activeId: d.activeId ?? null });
     Object.assign(prefs, PREF_DEFAULTS, d.prefs || {}); save('prefs', prefs); applyPrefs();
-    persist(); fillGroundSelect(); renderSettings(); toast(`Restored ${d.matches.length} matches`);
+    persist(); fillGroundSelect(); renderSettings(); toast(`Restored ${count(d.matches.length, 'match', 'matches')}`);
   } catch { toast('That file is not a Boundary backup'); }
 });
 

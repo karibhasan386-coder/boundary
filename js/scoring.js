@@ -52,9 +52,16 @@ export function target(match) {
   return match.innings.length > 1 ? summarize(match.innings[0], match.cfg).runs + 1 : null;
 }
 
+// How many wickets end an innings. With a named squad, the side is all out when only one batter
+// is left, even if the match setting is higher.
+export function wicketLimit(match, i) {
+  const squad = match.cfg.players?.[i]?.length || 0;
+  return squad > 1 ? Math.min(match.cfg.wickets, squad - 1) : match.cfg.wickets;
+}
+
 export function inningsOver(match, i) {
   const s = summarize(match.innings[i], match.cfg);
-  if (s.legal >= match.cfg.overs * bpo(match.cfg) || s.wickets >= match.cfg.wickets) return true;
+  if (s.legal >= match.cfg.overs * bpo(match.cfg) || s.wickets >= wicketLimit(match, i)) return true;
   return i === 1 && s.runs >= target(match);
 }
 
@@ -103,7 +110,7 @@ export function result(match) {
   const { cfg } = match;
   const a = summarize(match.innings[0], cfg), b = summarize(match.innings[1], cfg);
   if (b.runs > a.runs) {
-    const w = cfg.wickets - b.wickets;
+    const w = wicketLimit(match, 1) - b.wickets;
     return `${cfg.teams[1]} won by ${w} wicket${w === 1 ? '' : 's'}`;
   }
   if (a.runs > b.runs) {
