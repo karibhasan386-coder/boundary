@@ -6,6 +6,7 @@ import { measure } from '../js/ground.js';
 import { parseScore, describe } from '../js/voice.js';
 import { solve, side } from '../js/drs.js';
 import { ballAt } from '../js/hawkview.js';
+import { angle, metrics, checks, compare, LM } from '../js/form.js';
 
 let n = 0;
 const test = (name, fn) => { fn(); n++; console.log(`ok - ${name}`); };
@@ -253,6 +254,62 @@ test('scorecard: batting, bowling, extras, fall of wickets, partnerships', () =>
   assert.ok(csv.startsWith('"Match","Lions v Tigers"'));
   assert.ok(csv.includes('"Imran","b Tuhin","4","3","1","0"'));
   assert.equal(S.playerOfMatch(S.newMatch({})), null);
+});
+
+// A stick figure seen side-on. Coordinates are picture fractions; aspect 1 keeps the maths simple.
+function figure(over = {}) {
+  const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 1 }));
+  const base = {
+    nose: [0.50, 0.20], lShoulder: [0.50, 0.30], rShoulder: [0.50, 0.30], lElbow: [0.56, 0.38], rElbow: [0.44, 0.38],
+    lWrist: [0.60, 0.30], rWrist: [0.40, 0.30], lHip: [0.50, 0.55], rHip: [0.50, 0.55],
+    lKnee: [0.56, 0.70], rKnee: [0.46, 0.72], lAnkle: [0.50, 0.90], rAnkle: [0.46, 0.90], ...over,
+  };
+  for (const [k, [x, y]] of Object.entries(base)) lm[LM[k]] = { x, y, visibility: 1 };
+  return lm;
+}
+
+test('form: angles and measurements', () => {
+  assert.equal(Math.round(angle({ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 })), 180);
+  assert.equal(Math.round(angle({ x: 1, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 1 })), 90);
+  const m = metrics(figure(), 'right', 1);
+  assert.ok(m.kneeFront > 130 && m.kneeFront < 150);            // front (left) knee bent
+  assert.ok(m.kneeHit > 160);                                    // back leg nearly straight
+  assert.equal(Math.round(m.trunkLean), 0);
+  assert.ok(m.headOverFront < 0.01);
+  assert.equal(m.confidence, 1);
+  assert.ok(metrics(figure(), 'left', 1).kneeFront > 160);       // left-hander: sides swap
+});
+
+test('form: batting pointers change with the pose', () => {
+  const good = checks('batting', metrics(figure(), 'right', 1));
+  assert.equal(good.length, 4);
+  assert.ok(good.every((c) => c.ok));
+  const stiff = checks('batting', metrics(figure({ lKnee: [0.50, 0.72] }), 'right', 1));
+  assert.equal(stiff[0].ok, false);
+  assert.ok(stiff[0].detail.includes('stiff'));
+  const back = checks('batting', metrics(figure({ nose: [0.25, 0.20] }), 'right', 1));
+  assert.equal(back[1].ok, false);
+});
+
+test('form: bowling, badminton and football pointers', () => {
+  const armUp = { rElbow: [0.50, 0.20], rWrist: [0.50, 0.08] };               // straight arm above the head
+  const bowl = checks('bowling', metrics(figure({ ...armUp, lKnee: [0.50, 0.72] }), 'right', 1));
+  assert.ok(bowl[0].ok && bowl[1].ok && bowl[2].ok);
+  const chuck = checks('bowling', metrics(figure({ rElbow: [0.42, 0.22], rWrist: [0.50, 0.12] }), 'right', 1));
+  assert.equal(chuck[0].ok, false);
+  assert.ok(checks('badminton', metrics(figure(armUp), 'right', 1))[0].ok);
+  assert.equal(checks('badminton', metrics(figure(), 'right', 1))[0].ok, false);
+  const lean = checks('football', metrics(figure({ lShoulder: [0.30, 0.34], rShoulder: [0.30, 0.34] }), 'right', 1));
+  assert.equal(lean[1].ok, false);                                             // leaning back
+  assert.equal(checks('nonsense', {}).length, 0);
+});
+
+test('form: comparing with a saved reference', () => {
+  const ref = metrics(figure(), 'right', 1);
+  assert.deepEqual(compare(ref, ref), []);
+  const diff = compare(metrics(figure({ lKnee: [0.50, 0.72] }), 'right', 1), ref);
+  assert.equal(diff.length, 1);
+  assert.ok(diff[0].startsWith('Your front knee is') && diff[0].includes('straighter'));
 });
 
 test('ground: square field distances and area', () => {

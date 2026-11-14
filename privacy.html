@@ -17,7 +17,7 @@
 <body>
 <main>
   <h1>Boundary privacy policy</h1>
-  <p class="muted">Last updated: 13 November 2026</p>
+  <p class="muted">Last updated: 14 November 2026</p>
 
   <p>Boundary is a cricket scoring and decision review app. This page says what the app does with your information, in plain words.</p>
 
@@ -31,12 +31,14 @@
   <h2>What is stored, and where</h2>
   <p><b>On your device only:</b> match scores, team and player names you type in, saved grounds and local rules, review decisions, your theme and other settings. Deleting the app's data, or using Settings, Delete all data, removes all of it.</p>
   <p><b>Camera:</b> Boundary asks for the camera so it can show a live view and keep the last few seconds for replay. That video is held in the device's memory and is discarded when you leave the camera screen. A clip is only saved if you tap Download clip, and it is saved to your own device.</p>
+  <p><b>Form check:</b> when you use Form check, Boundary finds the player's body in the picture and measures joint angles. This runs on your device. The video and the body points are not uploaded. If you save a reference pose, only the body points are stored, on your device.</p>
   <p><b>Microphone:</b> Boundary asks for the microphone only when you tap Voice. The speech is turned into text by your browser's or phone's own speech service (on Android with Chrome, that is Google's). Boundary receives only the text, uses it to suggest a score, and does not store the audio.</p>
 
   <h2>Services Boundary talks to</h2>
   <ul>
     <li><b>GitHub Pages</b> hosts the app. Like any web host, it sees your IP address when the app loads.</li>
     <li><b>Google Fonts</b> supplies the app's typefaces. Your device requests them from Google when online.</li>
+    <li><b>jsDelivr and Google storage</b> supply the body-tracking software the first time you open Form check. They receive a normal download request, not your video.</li>
     <li><b>Google sign-in (Firebase Authentication)</b>, only if you choose to sign in. Boundary then receives your name, email address and a user ID from Google, used only to recognise your account. Signing in is optional and the app works without it.</li>
   </ul>
 

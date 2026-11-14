@@ -148,6 +148,34 @@ try {
     </div>
   </section>
 
+  <section id="tab-form" class="tab">
+    <h2>Form check</h2>
+    <div class="grid2">
+      <label>Shot<select id="fmSport"></select></label>
+      <label>You are<select id="fmHand"><option value="right">Right-handed / right-footed</option><option value="left">Left-handed / left-footed</option></select></label>
+    </div>
+    <p class="muted" id="fmTip"></p>
+    <div class="stage" id="fmStage">
+      <video id="fmVideo" playsinline muted></video>
+      <canvas id="fmCanvas"></canvas>
+      <div id="fmMsg" class="cam-msg">Pick a source to start.</div>
+    </div>
+    <div class="row">
+      <button data-fm="camera">Phone camera</button>
+      <label class="btn">Video file<input type="file" id="fmFile" accept="video/*" hidden></label>
+    </div>
+    <div class="row" id="fmCtl" hidden>
+      <button data-fm="play">Play / pause</button>
+      <button data-fm="slow">Slow</button>
+      <button data-fm="back">Back 1 frame</button>
+      <button data-fm="fwd">Forward 1 frame</button>
+    </div>
+    <p class="muted">Ask before filming anyone else. The video is analysed on this phone and is not uploaded.</p>
+    <button id="fmCheck" class="primary big" disabled>Check this moment</button>
+    <button id="fmTimer" class="big" disabled>Check in 5 seconds (for filming yourself)</button>
+    <div id="fmOut"></div>
+  </section>
+
   <section id="tab-ground" class="tab">
     <h2>Ground Studio</h2>
     <div class="row"><select id="gSel"></select><button id="gNew">New ground</button></div>
@@ -185,6 +213,7 @@ try {
 <nav>
   <button data-tab="score" class="on">Score</button>
   <button data-tab="camera">Camera</button>
+  <button data-tab="form">Form</button>
   <button data-tab="ground">Ground</button>
   <button data-tab="history">History</button>
   <button data-tab="settings">Settings</button>

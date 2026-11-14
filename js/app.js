@@ -8,6 +8,7 @@ import { parseScore, describe } from './voice.js';
 import { solve, side } from './drs.js';
 import { drawScene } from './hawkview.js';
 import * as auth from './auth.js';
+import { initForm } from './formview.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -44,6 +45,7 @@ function show(tab) {
   if (tab === 'history') renderHistory();
   if (tab === 'ground') editor.draw();
   if (tab === 'settings') renderSettings();
+  if (tab !== 'form') formView.stop(); // never leave the camera running on a tab nobody is looking at
 }
 $('nav').addEventListener('click', (e) => { if (e.target.dataset.tab) show(e.target.dataset.tab); });
 
@@ -786,8 +788,8 @@ const SETTINGS = [
     { label: 'Delete all data', note: 'Removes every match, ground and review from this phone. This cannot be undone.', action: ['wipe', 'Delete'], danger: true },
   ]],
   ['About', [
-    { label: 'Version', info: () => '0.6 (test build)' },
-    { label: 'What the AI can and cannot do', info: () => 'Decisions come from the replay and your answers. Ball tracking is experimental and is not an umpire.' },
+    { label: 'Version', info: () => '0.7 (test build)' },
+    { label: 'What the AI can and cannot do', info: () => 'Decisions come from the replay and your answers. Ball tracking is experimental and is not an umpire. Form check finds your body in the picture and measures joint angles; its pointers are general, not a coach.' },
     { label: 'Privacy', info: () => 'Scores and video stay on this phone unless you download or share them. Signing in is optional.', action: ['privacy', 'Read policy'] },
   ]],
 ];
@@ -933,6 +935,8 @@ splash.addEventListener('click', () => splash.classList.add('skip'));
 setTimeout(dropSplash, 3200);
 
 auth.onUser(() => { if ($('#tab-settings').classList.contains('active')) renderSettings(); });
+
+const formView = initForm({ toast, load, save });
 
 loadGround(defaultGround());
 applyPrefs();
