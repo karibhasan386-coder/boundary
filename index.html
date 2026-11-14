@@ -74,6 +74,8 @@ try {
     <p class="muted">Ask everyone playing before you record. Video stays on this phone unless you download a clip.</p>
     <label class="check"><input type="checkbox" id="trackOn"> Ball tracking (experimental, not reliable on real matches yet)</label>
     <div id="trackInfo" class="muted">Tracker idle.</div>
+    <button id="calibBtn" class="big" disabled>Mark the stumps (once per match)</button>
+    <div id="calibStep" class="stats" hidden></div>
     <button id="appeal" class="big primary" disabled>Appeal · replay the last balls</button>
 
     <div id="review" hidden>
@@ -94,6 +96,7 @@ try {
           <button id="drsUndo">Undo mark</button>
           <button id="drsFull">Full toss</button>
           <button id="drsReset">Start again</button>
+          <button id="drsRestump">Mark the stumps again</button>
         </div>
         <div class="grid2">
           <label>Batter<select id="drsHand"><option value="right">Right-handed</option><option value="left">Left-handed</option></select></label>

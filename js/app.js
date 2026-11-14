@@ -17,9 +17,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const db = {
   matches: load('matches', []), grounds: load('grounds', []),
   reviews: load('reviews', []), activeId: load('activeId', null),
+  stumps: load('stumps', null), // where the stumps are in the camera picture, marked once per match
 };
 const persist = () => {
-  const ok = [save('matches', db.matches), save('grounds', db.grounds), save('reviews', db.reviews), save('activeId', db.activeId)];
+  const ok = [save('matches', db.matches), save('grounds', db.grounds), save('reviews', db.reviews), save('activeId', db.activeId), save('stumps', db.stumps)];
   if (ok.includes(false)) toast('Could not save: phone storage is full or blocked');
   if (!$('#board').hidden) renderBoard();
 };
@@ -66,11 +67,49 @@ document.addEventListener('visibilitychange', syncWake);
 
 const scoreEl = $('#tab-score');
 
+// The first screen: one obvious thing to do.
+function homeHtml() {
+  const last = db.matches[db.matches.length - 1];
+  const line = (m, i) => { const t = S.summarize(m.innings[i], m.cfg); return `${esc(m.cfg.teams[i])} ${t.runs}/${t.wickets}`; };
+  return `
+    <h2>Match day</h2>
+    <p class="muted">Score the game, replay any ball, and settle LBW calls.</p>
+    <button class="primary big" data-home="start">Start a match</button>
+    <div class="row">
+      <button data-home="review">Review a ball</button>
+      <button data-home="form">Check my form</button>
+    </div>
+    ${last ? `<div class="item"><span class="muted">Last match</span><b>${line(last, 0)}${last.innings[1] ? ` · ${line(last, 1)}` : ''}</b>
+      <span class="muted">${last.done ? esc(S.result(last)) : 'Not finished'}</span>
+      <div class="row"><button data-home="card" data-id="${last.id}">Scorecard</button>${last.done ? '' : `<button data-home="resume" data-id="${last.id}">Carry on scoring</button>`}</div></div>` : ''}
+    <ol class="steps">
+      <li>Start a match and add the teams.</li>
+      <li>Stand the phone behind the stumps and start the camera.</li>
+      <li>Mark the stumps once.</li>
+      <li>Score each ball. Tap Appeal when there is an argument.</li>
+    </ol>`;
+}
+
+// The set-up checklist shown above the scoring buttons until the camera and stumps are ready.
+function guideHtml(m) {
+  const camOn = !!cam.canReplay, stumps = !!db.stumps;
+  if (camOn && stumps) return '<p class="ready"><span class="tag free">Ready</span> Camera on and stumps marked. Tap Appeal after any disputed ball.</p>';
+  if (m.guideHidden) return `<p class="muted">${camOn ? 'Camera on.' : 'Camera off, so Appeal has nothing to replay.'} <button class="link" data-act="guideShow">Show set-up</button></p>`;
+  const step = (done, text, act, label) => `<div class="g-row">${done ? '<span class="tag free">Done</span>' : `<button data-act="${act}">${label}</button>`}<span>${text}</span></div>`;
+  return `<div class="guide"><b>Match-day set-up</b>
+    <div class="g-row"><span class="tag free">Done</span><span>Teams and rules</span></div>
+    ${step(camOn, 'Stand the phone behind the stumps, looking down the pitch', 'camStart', 'Start camera')}
+    ${step(stumps, 'Mark the stumps once, so each LBW review takes 2 taps', 'stumps', 'Mark stumps')}
+    <button class="link" data-act="guideHide">Score without the camera</button></div>`;
+}
+
 function renderScore() {
   syncWake();
   const m = active();
+  if (!m && !ui.setupOpen) { scoreEl.innerHTML = homeHtml(); return; }
   if (!m) {
     scoreEl.innerHTML = `
+      <button type="button" class="link" data-home="back">Back</button>
       <h2>New match</h2>
       <div class="row">
         <button type="button" data-tpl="5,tennis">5 overs · tennis</button>
@@ -143,6 +182,7 @@ function renderScore() {
       ${m.done ? `<div class="result">${esc(S.result(m))}</div>` : ''}
     </div>
     <div class="over">${chips || '<span class="muted">No balls this over yet.</span>'}</div>
+    ${m.done ? '' : guideHtml(m)}
     ${groundNote}
     ${m.done ? '<button class="primary big" data-act="new">New match</button><button class="big" data-act="card">Full scorecard</button><button class="big" data-act="share">Share scorecard</button><button class="big" data-act="undo">Undo last ball</button>' : `
       ${players}
@@ -169,7 +209,8 @@ scoreEl.addEventListener('submit', (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
   const m = S.newMatch({ ...f, overs: +f.overs, wickets: +f.wickets, groundId: f.groundId ? +f.groundId : null, reball: f.reball === 'on' });
-  db.matches.push(m); db.activeId = m.id; persist(); renderScore();
+  db.matches.push(m); db.activeId = m.id; db.stumps = null; ui.setupOpen = false; // a new match means the camera may have moved
+  persist(); renderCalib(); renderScore();
 });
 
 scoreEl.addEventListener('click', (e) => {
@@ -192,8 +233,28 @@ scoreEl.addEventListener('click', (e) => {
   else if (act === 'new') { db.activeId = null; persist(); }
   else if (act === 'end') {
     if (ui.endArmed) { ui.endArmed = false; db.activeId = null; persist(); } else ui.endArmed = true;
-  } else if (act === 'review') { show('camera'); appeal(); return; }
+  } else if (act === 'review') { // one tap from the scoreboard to the replay
+    show('camera');
+    if (cam.canReplay) appeal();
+    else { camMsg('Start the camera first. After that, Appeal works from the Score tab in one tap.'); toast('Start the camera first'); }
+    return;
+  } else if (act === 'camStart') { show('camera'); startSource('camera'); return; }
+  else if (act === 'stumps') { show('camera'); if (cam.kind) startCalib(); else toast('Start the camera first'); return; }
+  else if (act === 'guideHide' || act === 'guideShow') { m.guideHidden = act === 'guideHide'; persist(); }
   else return;
+  renderScore();
+});
+
+// Home screen buttons.
+scoreEl.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-home]'); if (!b) return;
+  const act = b.dataset.home;
+  if (act === 'start') ui.setupOpen = true;
+  else if (act === 'back') ui.setupOpen = false;
+  else if (act === 'review') { show('camera'); return; }
+  else if (act === 'form') { show('form'); return; }
+  else if (act === 'card') { ui.cardId = +b.dataset.id; show('history'); return; }
+  else if (act === 'resume') { db.activeId = +b.dataset.id; persist(); }
   renderScore();
 });
 
@@ -320,8 +381,10 @@ async function startSource(kind, file) {
     $('#appeal').disabled = !cam.canReplay;
     if (!cam.canReplay) toast('Replay is not supported in this browser');
     if (!looping) { looping = true; schedule(); }
+    $('#calibBtn').disabled = false; renderScore();
   } catch (err) {
     cam.stop(); // do not leave a half-started source playing behind the error message
+    calib.on = false; $('#calibBtn').disabled = true; renderCalib(); renderScore();
     $('#appeal').disabled = true;
     camMsg(err.name === 'NotAllowedError' ? 'Camera permission was denied. Allow the camera in the browser, then tap Phone camera again.'
       : err.name === 'NotFoundError' ? 'No camera found on this device. Try Demo ball or Video file.'
@@ -344,6 +407,7 @@ function drawOverlay() {
   const g = overlay.getContext('2d');
   g.clearRect(0, 0, W, H);
   const { trail, bounce } = track;
+  drawStumps(g, W, H, dpr);
   if (cam.kind && $('#trackOn').checked) { // the zone the tracker watches: keep the pitch inside it
     const z = PITCH_ZONE;
     g.setLineDash([8 * dpr, 6 * dpr]); g.lineWidth = 1.5 * dpr; g.strokeStyle = 'rgba(255,255,255,0.7)';
@@ -372,6 +436,61 @@ function drawOverlay() {
 $('#tab-camera').addEventListener('click', (e) => { const k = e.target.dataset.src; if (k) startSource(k); });
 $('#fileSrc').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) startSource('file', f); e.target.value = ''; });
 $('#trackOn').addEventListener('change', () => tracker.reset());
+
+// ---------- stumps: marked once per match ----------
+// The camera does not move during a match, so the stumps sit in the same place in every replay.
+// Marking them once turns each LBW review from seven taps into two.
+const STUMP_KEYS = ['bl', 'br', 'bt', 'ol', 'or'];
+const calib = { on: false, marks: {} };
+
+function drawStumps(g, W, H, dpr) {
+  const marks = calib.on ? calib.marks : db.stumps?.marks;
+  if (!marks || !cam.kind) return;
+  const X = (p) => p.x * W, Y = (p) => p.y * H;
+  if (!calib.on) { // saved: show the wicket-to-wicket strip, so you can see at a glance if the camera has moved
+    g.beginPath(); [marks.bl, marks.br, marks.or, marks.ol].forEach((p, i) => (i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p)))); g.closePath();
+    g.fillStyle = 'rgba(64, 156, 255, 0.22)'; g.fill(); g.lineWidth = 1.5 * dpr; g.strokeStyle = 'rgba(255, 255, 255, 0.8)'; g.stroke();
+  }
+  g.font = `600 ${12 * dpr}px system-ui`;
+  STUMP_KEYS.forEach((k, i) => {
+    const p = marks[k]; if (!p) return;
+    g.beginPath(); g.arc(X(p), Y(p), 5 * dpr, 0, 7); g.fillStyle = '#ffd60a'; g.fill(); g.lineWidth = 1.5 * dpr; g.strokeStyle = '#fff'; g.stroke();
+    if (calib.on) { g.fillStyle = '#fff'; g.fillText(String(i + 1), X(p) + 8 * dpr, Y(p) - 6 * dpr); }
+  });
+}
+
+function renderCalib() {
+  const el = $('#calibStep');
+  $('#calibBtn').textContent = calib.on ? 'Marking the stumps…' : db.stumps ? 'Stumps marked. Mark them again' : 'Mark the stumps (once per match)';
+  el.hidden = !calib.on;
+  if (!calib.on) return;
+  const next = STUMP_KEYS.find((k) => !calib.marks[k]);
+  const text = DRS_STEPS.find(([k]) => k === next)[1].replace('Pause on a frame that shows both sets of stumps. ', '');
+  el.innerHTML = `<b>Stump mark ${STUMP_KEYS.indexOf(next) + 1} of 5</b>${esc(text)} Tap it on the picture above. <button class="link" id="calibCancel">Cancel</button>`;
+}
+
+function startCalib() { calib.on = true; calib.marks = {}; renderCalib(); $('#stage').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+
+function finishCalib() {
+  const m = calib.marks, batY = (m.bl.y + m.br.y) / 2, bowlY = (m.ol.y + m.or.y) / 2;
+  calib.on = false;
+  if (!(m.bl.x < m.br.x && m.ol.x < m.or.x && Math.abs(batY - bowlY) > 0.03 && m.bt.y < batY)) {
+    toast('Those marks do not look right. At each end tap the left stump, then the right. Try again.');
+    startCalib(); return;
+  }
+  db.stumps = { marks: { ...m }, t: Date.now() };
+  persist(); renderCalib(); renderScore();
+  toast('Stumps saved. LBW reviews now take 2 taps.');
+}
+
+overlay.addEventListener('pointerdown', (e) => {
+  if (!calib.on) return;
+  const b = overlay.getBoundingClientRect(), next = STUMP_KEYS.find((k) => !calib.marks[k]);
+  calib.marks[next] = { x: (e.clientX - b.left) / b.width, y: (e.clientY - b.top) / b.height };
+  if (STUMP_KEYS.every((k) => calib.marks[k])) finishCalib(); else renderCalib();
+});
+$('#calibBtn').addEventListener('click', () => (cam.kind ? startCalib() : toast('Start the camera first')));
+$('#calibStep').addEventListener('click', (e) => { if (e.target.id === 'calibCancel') { calib.on = false; renderCalib(); } });
 
 // ---------- review ----------
 const replay = $('#replay');
@@ -493,12 +612,14 @@ const DRS_STEPS = [
   ['pitch', 'Step to the frame where the ball hits the ground. Tap the ball. No bounce? Tap "Full toss".'],
   ['impact', 'Step to the frame where the ball hits the batter. Tap the ball.'],
 ];
-const drs = { on: false, marks: {}, fullToss: false, result: null };
+const drs = { on: false, marks: {}, fullToss: false, result: null, usingSaved: false };
 const drsCanvas = $('#drsCanvas');
-const drsNext = () => DRS_STEPS.find(([k]) => !drs.marks[k] && !(k === 'pitch' && drs.fullToss));
+// With stumps already marked for this match, only the two ball taps are left.
+const drsSteps = () => DRS_STEPS.filter(([k]) => !(drs.usingSaved && STUMP_KEYS.includes(k)) && !(k === 'pitch' && drs.fullToss));
+const drsNext = () => drsSteps().find(([k]) => !drs.marks[k]);
 
 function drsOpen() {
-  Object.assign(drs, { on: true, marks: {}, fullToss: false });
+  Object.assign(drs, { on: true, marks: db.stumps ? { ...db.stumps.marks } : {}, fullToss: false, usingSaved: !!db.stumps });
   replay.pause(); replay.controls = false;
   drsCanvas.hidden = false; $('#drsPanel').hidden = false; $('#drsStart').hidden = true;
   drsRender();
@@ -536,16 +657,16 @@ function playDecision() {
 function drsRender() {
   if (!drs.on) return;
   const next = drsNext(), camera = $('#camPos').value, hand = $('#drsHand').value;
-  const done = DRS_STEPS.filter(([k]) => drs.marks[k]).length, total = DRS_STEPS.length - (drs.fullToss ? 1 : 0);
+  const done = drsSteps().filter(([k]) => drs.marks[k]).length, total = drsSteps().length;
   let r = null;
   cancelAnimationFrame(hawkRaf); clearTimeout(hawkTimer);
   drs.result = null; $('#hawk').hidden = true; $('#drsAgain').hidden = true; $('#drsOut').innerHTML = '';
   if (next) {
-    $('#drsStep').innerHTML = `<b>Mark ${done + 1} of ${total}</b>${esc(next[1])}`;
+    $('#drsStep').innerHTML = `<b>Mark ${done + 1} of ${total}</b>${esc(next[1])}${drs.usingSaved ? ' The stumps are already marked for this match.' : ''}`;
   } else {
     r = solve(drs.marks, { aspect: replay.videoWidth / replay.videoHeight || 16 / 9, stride: +$('#drsStride').value, fullToss: drs.fullToss });
     if (r.error) {
-      $('#drsStep').innerHTML = `<b>Could not work it out</b>${esc(r.error)}`;
+      $('#drsStep').innerHTML = `<b>Could not work it out</b>${esc(r.error)}${drs.usingSaved ? ' If the camera has moved since you marked the stumps, tap "Mark the stumps again".' : ''}`;
     } else {
       const pitching = side(r.pitching, hand, camera), impact = side(r.impact, hand, camera);
       // Three answers are measured from the taps; three come from the tick boxes.
@@ -571,6 +692,11 @@ function drsRender() {
       $('#drsOut').innerHTML = `<div class="tiles">${tile('Pitching', pitching, r.P ? r.P.u : 0)}${tile('Impact', impact, r.I.u)}${tile('Wickets', r.wickets, 2)}</div>
         <div id="drsBanner" class="banner ${kind}"><b>${word}</b><span>${esc(why)}</span></div>
         <p class="muted">Yellow dot: where it pitched. Red path: bounce to pad. Blue path: where it was going. An estimate from your taps with a straight path after the bounce, so no swing or dip. The flight before the bounce is drawn for effect.${camera === 'side-on' || camera === 'other' ? ' This only works with the camera behind the stumps: check Camera position below.' : ''}</p>`;
+      if (!drs.usingSaved) { // first review of the match: keep the stump marks for the rest of it
+        db.stumps = { marks: Object.fromEntries(STUMP_KEYS.map((k) => [k, drs.marks[k]])), t: Date.now() };
+        drs.usingSaved = true; persist(); renderCalib();
+        toast('Stumps saved for this match. The next review takes 2 taps.');
+      }
       drs.result = r; $('#hawk').hidden = false; $('#drsAgain').hidden = false;
       playDecision();
     }
@@ -598,6 +724,7 @@ function drsDraw(r) {
     if (d.pitch) dot(d.pitch, 6 * dpr, '#ffd60a');
     dot(d.impact, 6 * dpr, '#fff');
   } else {
+    if (drs.usingSaved) { poly([drs.marks.bl, drs.marks.br, drs.marks.or, drs.marks.ol]); g.fillStyle = 'rgba(64, 156, 255, 0.22)'; g.fill(); }
     const label = { bl: '1', br: '2', bt: '3', ol: '4', or: '5', pitch: 'P', impact: 'I' };
     g.font = `${12 * dpr}px system-ui`;
     for (const [k] of DRS_STEPS) {
@@ -617,12 +744,16 @@ drsCanvas.addEventListener('pointerdown', (e) => {
 $('#drsStart').addEventListener('click', drsOpen);
 $('#drsPlay').addEventListener('click', () => (replay.paused ? replay.play().catch(() => {}) : replay.pause()));
 $('#drsUndo').addEventListener('click', () => {
-  const last = [...DRS_STEPS].reverse().find(([k]) => drs.marks[k]);
+  const last = [...drsSteps()].reverse().find(([k]) => drs.marks[k]);
   if (last) delete drs.marks[last[0]]; else drs.fullToss = false;
   drsRender();
 });
 $('#drsFull').addEventListener('click', () => { drs.fullToss = true; delete drs.marks.pitch; drsRender(); });
-$('#drsReset').addEventListener('click', () => { drs.marks = {}; drs.fullToss = false; drsRender(); });
+$('#drsReset').addEventListener('click', () => { drs.marks = drs.usingSaved ? { ...db.stumps.marks } : {}; drs.fullToss = false; drsRender(); });
+$('#drsRestump').addEventListener('click', () => {
+  db.stumps = null; persist(); renderCalib();
+  Object.assign(drs, { marks: {}, fullToss: false, usingSaved: false }); drsRender();
+});
 for (const id of ['#drsHand', '#drsStride', '#camPos', '#drsNoBall', '#drsBat', '#drsNoShot']) $(id).addEventListener('change', drsRender);
 $('#drsAgain').addEventListener('click', playDecision);
 window.addEventListener('resize', drsRender);
@@ -790,7 +921,7 @@ const SETTINGS = [
     { label: 'Delete all data', note: 'Removes every match, ground and review from this phone. This cannot be undone.', action: ['wipe', 'Delete'], danger: true },
   ]],
   ['About', [
-    { label: 'Version', info: () => '0.7 (test build)' },
+    { label: 'Version', info: () => '0.8 (test build)' },
     { label: 'What the AI can and cannot do', info: () => 'Decisions come from the replay and your answers. Ball tracking is experimental and is not an umpire. Form check finds your body in the picture and measures joint angles; its pointers are general, not a coach.' },
     { label: 'Privacy', info: () => 'Scores and video stay on this phone unless you download or share them. Signing in is optional.', action: ['privacy', 'Read policy'] },
   ]],
@@ -851,7 +982,7 @@ $('#setList').addEventListener('click', (e) => {
   ui.armed = null;
   if (act === 'import') { $('#importFile').click(); renderSettings(); return; }
   if (act === 'wipe') {
-    Object.assign(db, { matches: [], grounds: [], reviews: [], activeId: null });
+    Object.assign(db, { matches: [], grounds: [], reviews: [], activeId: null, stumps: null });
     persist(); fillGroundSelect(); renderSettings(); toast('All data deleted');
   }
 });
@@ -941,6 +1072,7 @@ auth.onUser(() => { if ($('#tab-settings').classList.contains('active')) renderS
 const formView = initForm({ toast, load, save });
 
 loadGround(defaultGround());
+renderCalib();
 applyPrefs();
 applyTheme();
 if (location.hash === '#scoreboard') openBoard();

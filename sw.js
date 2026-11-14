@@ -1,5 +1,5 @@
 // Network first, cache as fallback: always fresh when online, still opens at a ground with no signal.
-const CACHE = 'boundary-v17';
+const CACHE = 'boundary-v18';
 const FILES = ['./', 'index.html', 'css/styles.css', 'icon.svg', 'manifest.webmanifest',
   'js/app.js', 'js/scoring.js', 'js/lbw.js', 'js/store.js', 'js/camera.js', 'js/tracker.js', 'js/ground.js', 'js/voice.js', 'js/drs.js', 'js/hawkview.js', 'js/auth.js', 'js/firebase-config.js', 'js/form.js', 'js/pose.js', 'js/formview.js', 'privacy.html', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 
